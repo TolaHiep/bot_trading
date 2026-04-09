@@ -445,3 +445,62 @@ class TelegramBot:
             "remaining_quota": self.rate_limiter.get_remaining_quota(),
             "alerts_sent": len(self.rate_limiter.alert_timestamps)
         }
+
+
+
+if __name__ == "__main__":
+    """Run Telegram bot standalone"""
+    import os
+    import asyncio
+    from dotenv import load_dotenv
+    
+    load_dotenv()
+    
+    # Get configuration from environment
+    bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+    chat_ids_str = os.getenv('TELEGRAM_CHAT_IDS', '')
+    
+    if not bot_token:
+        logger.error("TELEGRAM_BOT_TOKEN not found in environment")
+        exit(1)
+    
+    if not chat_ids_str:
+        logger.error("TELEGRAM_CHAT_IDS not found in environment")
+        exit(1)
+    
+    # Parse chat IDs
+    try:
+        chat_ids = [int(id.strip()) for id in chat_ids_str.split(',') if id.strip()]
+    except ValueError:
+        logger.error("Invalid TELEGRAM_CHAT_IDS format. Use comma-separated integers.")
+        exit(1)
+    
+    if not chat_ids:
+        logger.error("No valid chat IDs found")
+        exit(1)
+    
+    logger.info(f"Starting Telegram bot with {len(chat_ids)} allowed chat IDs")
+    
+    # Create metrics collector (mock for standalone)
+    metrics_collector = MetricsCollector()
+    
+    # Create and start bot
+    bot = TelegramBot(
+        bot_token=bot_token,
+        allowed_chat_ids=chat_ids,
+        metrics_collector=metrics_collector
+    )
+    
+    async def run():
+        try:
+            await bot.start()
+            logger.info("Telegram bot is running. Press Ctrl+C to stop.")
+            # Keep running
+            while True:
+                await asyncio.sleep(1)
+        except KeyboardInterrupt:
+            logger.info("Shutting down...")
+        finally:
+            await bot.stop()
+    
+    asyncio.run(run())

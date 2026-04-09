@@ -60,6 +60,7 @@ services:
       - DATABASE_URL=postgresql://trading_user:trading_pass@timescaledb:5432/trading_db
     volumes:
       - ./src:/app/src
+      - ./scripts:/app/scripts
       - ./config:/app/config
       - ./logs:/app/logs
     depends_on:
@@ -68,7 +69,7 @@ services:
     restart: unless-stopped
     networks:
       - trading_network
-    command: python -m src.monitoring.telegram_bot
+    command: python scripts/run_telegram_bot.py
 
   # Streamlit Dashboard
   dashboard:
