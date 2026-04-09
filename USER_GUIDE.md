@@ -68,16 +68,188 @@ TELEGRAM_CHAT_ID=your_chat_id
 
 ### First Run
 
+#### 🚀 Cách Nhanh Nhất: Dùng Setup Script (Khuyến nghị)
+
+**Windows PowerShell**:
+```powershell
+# Chạy script setup tự động
+.\setup.ps1
+```
+
+**Linux/macOS**:
+```bash
+# Cho phép execute
+chmod +x setup.sh
+
+# Chạy script setup tự động
+./setup.sh
+```
+
+**Script sẽ tự động**:
+1. ✅ Kiểm tra Docker, Docker Compose
+2. ✅ Kiểm tra .env file
+3. ✅ Build và start containers
+4. ✅ Tạo database và tables
+5. ✅ Test kết nối Bybit
+6. ✅ Hiển thị hướng dẫn tiếp theo
+
+**Nếu script báo lỗi về time sync**:
+- Windows: Settings → Time & Language → Sync now
+- Linux/macOS: `sudo ntpdate -s time.nist.gov`
+
+---
+
+#### 📝 Cách Thủ Công (Nếu script không chạy được)
+
+<details>
+<summary>Click để xem hướng dẫn chi tiết</summary>
+
+**⚠️ BẮT BUỘC**: Bybit API yêu cầu giờ chính xác (sai lệch < 5 giây sẽ bị reject)
+
+**Windows**:
+1. Mở **Settings** (Win + I)
+2. **Time & Language** → **Date & Time**
+3. Bật **Set time automatically**
+4. Click **Sync now**
+
+**Hoặc dùng PowerShell (Run as Administrator)**:
+```powershell
+Start-Service w32time
+w32tm /resync
+```
+
+**Linux/macOS**:
+```bash
+sudo ntpdate -s time.nist.gov
+```
+
+#### Bước 2: Start Docker containers
+
 ```bash
 # Start services
 docker compose up -d
 
-# Verify connection
+# Đợi 10-15 giây để database khởi động
+```
+
+#### Bước 3: Tạo database
+
+```bash
+# Tạo database trading_db
+docker compose exec timescaledb psql -U trading_user -d postgres -c "CREATE DATABASE trading_db;"
+
+# Enable TimescaleDB extension
+docker compose exec timescaledb psql -U trading_user -d trading_db -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+```
+
+#### Bước 4: Tạo database tables
+
+**Tạo file init_db.sql tạm thời**:
+```sql
+-- Copy nội dung này vào file init_db.sql
+CREATE TABLE IF NOT EXISTS klines (
+    timestamp TIMESTAMPTZ NOT NULL,
+    symbol TEXT NOT NULL,
+    timeframe TEXT NOT NULL,
+    open NUMERIC NOT NULL,
+    high NUMERIC NOT NULL,
+    low NUMERIC NOT NULL,
+    close NUMERIC NOT NULL,
+    volume NUMERIC NOT NULL,
+    PRIMARY KEY (timestamp, symbol, timeframe)
+);
+
+SELECT create_hypertable('klines', 'timestamp', if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS idx_klines_symbol_timeframe ON klines (symbol, timeframe, timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS trades (
+    timestamp TIMESTAMPTZ NOT NULL,
+    symbol TEXT NOT NULL,
+    trade_id TEXT NOT NULL,
+    price NUMERIC NOT NULL,
+    quantity NUMERIC NOT NULL,
+    side TEXT NOT NULL,
+    PRIMARY KEY (timestamp, symbol, trade_id)
+);
+
+SELECT create_hypertable('trades', 'timestamp', if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades (symbol, timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS signals (
+    id SERIAL PRIMARY KEY,
+    timestamp TIMESTAMPTZ NOT NULL,
+    symbol TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    confidence INTEGER NOT NULL,
+    reasons JSONB NOT NULL,
+    indicators JSONB NOT NULL,
+    order_flow JSONB NOT NULL,
+    wyckoff_phase TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_signals_timestamp ON signals (timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS completed_trades (
+    id SERIAL PRIMARY KEY,
+    trade_id TEXT UNIQUE NOT NULL,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL,
+    entry_price NUMERIC NOT NULL,
+    exit_price NUMERIC NOT NULL,
+    quantity NUMERIC NOT NULL,
+    opened_at TIMESTAMPTZ NOT NULL,
+    closed_at TIMESTAMPTZ NOT NULL,
+    pnl NUMERIC NOT NULL,
+    pnl_percentage NUMERIC NOT NULL,
+    commission NUMERIC NOT NULL,
+    slippage NUMERIC NOT NULL,
+    exit_reason TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_completed_trades_closed_at ON completed_trades (closed_at DESC);
+```
+
+**Chạy script tạo tables**:
+
+**Windows PowerShell**:
+```powershell
+Get-Content init_db.sql | docker compose exec -T timescaledb psql -U trading_user -d trading_db
+```
+
+**Linux/macOS**:
+```bash
+cat init_db.sql | docker compose exec -T timescaledb psql -U trading_user -d trading_db
+```
+
+**Xóa file tạm**:
+```bash
+rm init_db.sql
+```
+
+#### Bước 5: Verify setup
+
+```bash
+# Test Bybit connection
 docker compose exec trading_bot python scripts/test_connection_docker.py
 
-# Check logs
-docker compose logs -f trading_bot
+# Kết quả mong đợi:
+# ✅ Bybit client initialized
+# ✅ Connected to Bybit Testnet
+# ✅ Account Balance Retrieved
+# ✅ Market Data Retrieved
+# 🎉 All tests passed!
+
+# Verify database tables
+docker compose exec timescaledb psql -U trading_user -d trading_db -c "\dt"
+
+# Kết quả mong đợi: 4 tables (klines, trades, signals, completed_trades)
 ```
+
+</details>
+
+---
+
+### ✅ Sau khi setup xong
 
 ---
 

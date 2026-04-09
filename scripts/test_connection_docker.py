@@ -26,13 +26,15 @@ def test_connection():
         return False
     
     try:
-        # Initialize client
+        # Initialize client with larger recv_window to handle time drift
         session = HTTP(
             testnet=testnet,
             api_key=api_key,
-            api_secret=api_secret
+            api_secret=api_secret,
+            recv_window=10000  # Increase to 10 seconds to handle time drift
         )
         print("✅ Bybit client initialized")
+        print("   (Using extended recv_window for time drift tolerance)")
         
         # Test 1: Get server time
         server_time = session.get_server_time()
@@ -48,17 +50,31 @@ def test_connection():
         if balance['retCode'] == 0:
             print("✅ Account Balance Retrieved")
             usdt_balance = None
-            for coin in balance['result']['list'][0]['coin']:
-                if coin['coin'] == 'USDT':
-                    usdt_balance = float(coin['walletBalance'])
-                    available = float(coin['availableToWithdraw'])
-                    print(f"   USDT Balance: {usdt_balance}")
-                    print(f"   Available: {available}")
-                    break
             
-            if usdt_balance is None:
+            # Check if account has any coins
+            if balance['result']['list'] and len(balance['result']['list']) > 0:
+                for coin in balance['result']['list'][0]['coin']:
+                    if coin['coin'] == 'USDT':
+                        # Handle empty string or None values
+                        wallet_balance = coin.get('walletBalance', '0')
+                        available = coin.get('availableToWithdraw', '0')
+                        
+                        # Convert to float, default to 0 if empty
+                        usdt_balance = float(wallet_balance) if wallet_balance else 0.0
+                        available_balance = float(available) if available else 0.0
+                        
+                        print(f"   USDT Balance: ${usdt_balance:,.2f}")
+                        print(f"   Available: ${available_balance:,.2f}")
+                        break
+            
+            if usdt_balance is None or usdt_balance == 0:
                 print("   ⚠️  No USDT found in Unified Trading Account")
-                print("   Please transfer USDT from Spot Account to Unified Trading Account")
+                print()
+                print("   📝 Next steps:")
+                print("   1. Go to Bybit Testnet: https://testnet.bybit.com")
+                print("   2. Assets → Request Test Coins (get 10,000 USDT)")
+                print("   3. Transfer USDT: Spot Account → Unified Trading Account")
+                print()
         else:
             print(f"❌ Balance check failed: {balance['retMsg']}")
             return False
