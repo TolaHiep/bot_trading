@@ -350,31 +350,34 @@ class TelegramBot:
         )
         
         try:
+            # Create flag file to signal trading bot to start
+            import os
+            flag_file = "/app/logs/start_trading.flag"
+            
+            with open(flag_file, 'w') as f:
+                f.write(f"START:{datetime.now().isoformat()}\n")
+            
+            # Start trading bot process
             import subprocess
-            # Start trading bot in background
-            result = subprocess.run(
-                ["docker", "compose", "exec", "-d", "trading_bot", 
-                 "python", "scripts/run_paper_trading.py"],
-                capture_output=True,
-                text=True,
-                timeout=10
+            result = subprocess.Popen(
+                ["python", "scripts/run_paper_trading.py"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd="/app"
             )
             
-            if result.returncode == 0:
-                await update.message.reply_text(
-                    "✅ *Trading Bot Started*\n\n"
-                    "Mode: Paper Trading\n"
-                    "Status: Running\n\n"
-                    "📊 Check dashboard: http://localhost:8501\n"
-                    "📱 You will receive trade alerts here",
-                    parse_mode="Markdown"
-                )
-            else:
-                await update.message.reply_text(
-                    f"❌ *Failed to start trading bot*\n\n"
-                    f"Error: {result.stderr}",
-                    parse_mode="Markdown"
-                )
+            await update.message.reply_text(
+                "✅ *Trading Bot Started*\n\n"
+                "Mode: Paper Trading\n"
+                f"Process ID: {result.pid}\n"
+                "Status: Running\n\n"
+                "📊 Dashboard: http://localhost:8501\n"
+                "📱 You will receive trade alerts here",
+                parse_mode="Markdown"
+            )
+            
+            logger.info(f"Trading bot started with PID: {result.pid}")
+            
         except Exception as e:
             logger.error(f"Error starting trading bot: {e}")
             await update.message.reply_text(
@@ -401,22 +404,30 @@ class TelegramBot:
         )
         
         try:
+            # Create flag file to signal trading bot to stop
+            import os
+            flag_file = "/app/logs/stop_trading.flag"
+            
+            with open(flag_file, 'w') as f:
+                f.write(f"STOP:{datetime.now().isoformat()}\n")
+            
+            # Kill trading bot process
             import subprocess
-            # Stop trading bot
             result = subprocess.run(
-                ["docker", "compose", "exec", "trading_bot", 
-                 "pkill", "-f", "run_paper_trading.py"],
+                ["pkill", "-f", "run_paper_trading.py"],
                 capture_output=True,
-                text=True,
-                timeout=10
+                text=True
             )
             
             await update.message.reply_text(
                 "✅ *Trading Bot Stopped*\n\n"
                 "All positions closed (paper trading)\n"
-                "No real money affected",
+                "💰 No real money affected",
                 parse_mode="Markdown"
             )
+            
+            logger.info("Trading bot stopped")
+            
         except Exception as e:
             logger.error(f"Error stopping trading bot: {e}")
             await update.message.reply_text(
