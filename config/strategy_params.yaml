@@ -1,0 +1,159 @@
+# Strategy Parameters Configuration
+# Quantitative Trading Bot
+
+# Indicator Parameters
+indicators:
+  # Simple Moving Average
+  sma:
+    periods: [9, 21, 50, 200]
+  
+  # Exponential Moving Average
+  ema:
+    periods: [9, 21, 50, 200]
+  
+  # Relative Strength Index
+  rsi:
+    period: 14
+    overbought: 70
+    oversold: 30
+  
+  # MACD (Moving Average Convergence Divergence)
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+  
+  # Bollinger Bands
+  bollinger:
+    period: 20
+    std: 2.0
+  
+  # Volume Profile
+  volume_profile:
+    window_hours: 24
+
+# Risk Management Parameters
+risk:
+  # Maximum risk per trade (2%)
+  max_risk_per_trade: 0.02
+  
+  # Maximum position size (10% of balance)
+  max_position_size: 0.10
+  
+  # Initial stop-loss distance (2%)
+  stop_loss_pct: 0.02
+  
+  # Trailing stop distance (1%)
+  trailing_stop_distance: 0.01
+  
+  # Breakeven profit threshold (1%)
+  breakeven_threshold: 0.01
+  
+  # Trailing stop activation threshold (2%)
+  trailing_activation: 0.02
+  
+  # Kill Switch Parameters
+  kill_switch:
+    # Maximum daily drawdown (5%)
+    max_daily_drawdown: 0.05
+    
+    # Maximum consecutive losses
+    max_consecutive_losses: 5
+    
+    # Maximum API error rate (20% over 1 minute)
+    max_api_error_rate: 0.20
+    
+    # Abnormal price movement threshold (10% in 1 minute)
+    max_price_movement: 0.10
+
+# Execution Parameters
+execution:
+  # Maximum acceptable slippage (0.1%)
+  max_slippage: 0.001
+  
+  # Maximum total trading cost (0.2%)
+  max_total_cost: 0.002
+  
+  # Order timeout (5 seconds)
+  order_timeout: 5
+  
+  # Maximum order retries
+  max_retries: 2
+  
+  # Prefer limit orders
+  prefer_limit_orders: true
+
+# Signal Generation Parameters
+signal:
+  # Minimum confidence score (60)
+  min_confidence: 60
+  
+  # Volume confirmation multiplier (1.5x average)
+  volume_multiplier: 1.5
+  
+  # Multi-timeframe alignment
+  timeframes: ["1m", "5m", "15m"]
+  
+  # Require alignment across all timeframes
+  require_alignment: true
+
+# Order Flow Parameters
+order_flow:
+  # Rolling window size (1000 trades)
+  window_size: 1000
+  
+  # Imbalance threshold (70%)
+  imbalance_threshold: 0.70
+
+# Wyckoff Parameters
+wyckoff:
+  # Swing detection lookback period
+  swing_lookback: 20
+  
+  # Range contraction threshold
+  range_contraction_threshold: 0.5
+  
+  # Volume decrease threshold
+  volume_decrease_threshold: 0.7
+
+# Backtest Parameters
+backtest:
+  # Initial balance
+  initial_balance: 10000
+  
+  # Commission rate (Bybit taker fee: 0.06%)
+  commission_rate: 0.0006
+  
+  # Risk-free rate for Sharpe ratio (2% annual)
+  risk_free_rate: 0.02
+  
+  # Slippage model
+  slippage:
+    # Default slippage for market orders (0.05%)
+    default_market: 0.0005
+    
+    # Default slippage for limit orders (0%)
+    default_limit: 0.0
+    
+    # Liquidity penalty (0.2%)
+    liquidity_penalty: 0.002
+
+# Trading Mode
+mode:
+  # Mode: "paper" or "live"
+  trading_mode: "paper"
+  
+  # Testnet or mainnet
+  use_testnet: true
+
+# Symbols
+symbols:
+  - "BTCUSDT"
+  - "ETHUSDT"
+
+# Timeframes
+timeframes:
+  - "1m"
+  - "5m"
+  - "15m"
+  - "1h"

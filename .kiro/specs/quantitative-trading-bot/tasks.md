@@ -485,15 +485,15 @@ Tài liệu này mô tả chi tiết các tasks cần thực hiện để implem
 **Dependencies**: Task 13
 
 **Acceptance Criteria**:
-- [ ] Calculate total return, annualized return, Sharpe ratio
-- [ ] Calculate max drawdown và average drawdown
-- [ ] Calculate win rate và profit factor
-- [ ] Calculate average win và average loss
-- [ ] Generate equity curve (Plotly interactive)
-- [ ] Identify best và worst performing periods
-- [ ] Export metrics to JSON
-- [ ] Sharpe Ratio tính đúng công thức chuẩn
-- [ ] PDF report tự động generate sau mỗi backtest
+- [x] Calculate total return, annualized return, Sharpe ratio
+- [x] Calculate max drawdown và average drawdown
+- [x] Calculate win rate và profit factor
+- [x] Calculate average win và average loss
+- [x] Generate equity curve (Plotly interactive)
+- [x] Identify best và worst performing periods
+- [x] Export metrics to JSON
+- [x] Sharpe Ratio tính đúng công thức chuẩn
+- [x] PDF report tự động generate sau mỗi backtest
 
 **Files to Create**:
 - `src/backtest/analytics.py` (PerformanceAnalytics)
@@ -585,16 +585,16 @@ Tài liệu này mô tả chi tiết các tasks cần thực hiện để implem
 **Dependencies**: Task 13, Task 14
 
 **Acceptance Criteria**:
-- [ ] Load configuration từ YAML at startup
-- [ ] Support config cho all indicator parameters
-- [ ] Support config cho risk parameters
-- [ ] Support config cho execution parameters
-- [ ] Validate config values against allowed ranges
-- [ ] Refuse to start nếu config invalid
-- [ ] Support hot-reload cho non-critical parameters
-- [ ] Grid search script chạy song song >= 4 cores
-- [ ] Thay tham số không cần sửa code
-- [ ] Preserve comments trong YAML khi serialize
+- [x] Load configuration từ YAML at startup
+- [x] Support config cho all indicator parameters
+- [x] Support config cho risk parameters
+- [x] Support config cho execution parameters
+- [x] Validate config values against allowed ranges
+- [x] Refuse to start nếu config invalid
+- [x] Support hot-reload cho non-critical parameters
+- [x] Grid search script chạy song song >= 4 cores
+- [x] Thay tham số không cần sửa code
+- [x] Preserve comments trong YAML khi serialize
 
 **Files to Create**:
 - `src/config/config_manager.py` (Configuration management)
@@ -610,13 +610,41 @@ Tài liệu này mô tả chi tiết các tasks cần thực hiện để implem
 
 ---
 
+---
+
+## Phase 7: Documentation & Operations (4h)
+
+### Task 18: System Handbook & Operations Guide
+
+**Mô tả**: Tạo tài liệu hướng dẫn cài đặt, vận hành và xử lý sự cố cho hệ thống.
+
+**Estimated Hours**: 4h
+
+**Dependencies**: Task 16, Task 17
+
+**Acceptance Criteria**:
+- [x] Installation Guide: Hướng dẫn từ lúc clone code đến lúc chạy được docker-compose
+- [x] Parameter Dictionary: Giải thích ý nghĩa của từng thông số trong file config.yaml
+- [x] Operational Manual: Cách đọc Dashboard, Telegram commands, quy trình 3 bước (Backtest → Paper → Live)
+- [x] Troubleshooting: Danh sách các lỗi thường gặp và cách xử lý
+
+**Files to Create**:
+- `docs/INSTALLATION_GUIDE.md`
+- `docs/PARAMETER_DICTIONARY.md`
+- `docs/OPERATIONAL_MANUAL.md`
+- `docs/TROUBLESHOOTING.md`
+
+**Property Tests**: None (documentation)
+
+---
+
 ## Summary
 
-**Total Tasks**: 17 main tasks
-**Total Estimated Hours**: 109h (raw) + 33h (buffer) = **142h**
-**Total Phases**: 6 phases
+**Total Tasks**: 18 main tasks
+**Total Estimated Hours**: 113h (raw) + 33h (buffer) = **146h**
+**Total Phases**: 7 phases
 
-**Critical Path**: Task 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14 → 15 → 16 → 17
+**Critical Path**: Task 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14 → 15 → 16 → 17 → 18
 
 **Parallel Opportunities**:
 - Task 8-10 (Risk Model) có thể phát triển song song với Task 6-7 (Alpha Model)

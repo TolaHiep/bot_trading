@@ -34,6 +34,7 @@ wheels/
 *.swp
 *.swo
 *.swn
+.kiro/
 
 # Testing
 .pytest_cache/
