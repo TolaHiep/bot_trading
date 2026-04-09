@@ -123,6 +123,8 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("status", self._handle_status))
         self.application.add_handler(CommandHandler("positions", self._handle_positions))
         self.application.add_handler(CommandHandler("pnl", self._handle_pnl))
+        self.application.add_handler(CommandHandler("start_trading", self._handle_start_trading))
+        self.application.add_handler(CommandHandler("stop_trading", self._handle_stop_trading))
         self.application.add_handler(CommandHandler("help", self._handle_help))
         
         # Start bot
@@ -136,6 +138,8 @@ class TelegramBot:
             BotCommand("status", "System status and health"),
             BotCommand("positions", "Open positions and unrealized P&L"),
             BotCommand("pnl", "P&L summary and performance"),
+            BotCommand("start_trading", "Start paper trading bot"),
+            BotCommand("stop_trading", "Stop trading bot"),
             BotCommand("help", "Show help message")
         ]
         await self.application.bot.set_my_commands(commands)
@@ -179,6 +183,8 @@ class TelegramBot:
             "/status - System status and health\n"
             "/positions - Open positions\n"
             "/pnl - P&L summary\n"
+            "/start_trading - Start paper trading\n"
+            "/stop_trading - Stop trading\n"
             "/help - Show this help message"
         )
     
@@ -310,6 +316,8 @@ class TelegramBot:
             "/status - System status and connection health\n"
             "/positions - Open positions and unrealized P&L\n"
             "/pnl - Daily, weekly, and total P&L\n"
+            "/start_trading - Start paper trading bot\n"
+            "/stop_trading - Stop trading bot\n"
             "/help - Show this help message\n\n"
             "📢 *Alerts*\n"
             "You will receive alerts for:\n"
@@ -322,6 +330,99 @@ class TelegramBot:
         )
         
         await update.message.reply_text(message, parse_mode="Markdown")
+    
+    async def _handle_start_trading(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /start_trading command"""
+        chat_id = update.effective_chat.id
+        
+        if not self._is_authorized(chat_id):
+            await update.message.reply_text("❌ Unauthorized")
+            return
+        
+        await update.message.reply_text(
+            "🚀 *Starting Paper Trading Bot*\n\n"
+            "Please wait...",
+            parse_mode="Markdown"
+        )
+        
+        try:
+            import subprocess
+            # Start trading bot in background
+            result = subprocess.run(
+                ["docker", "compose", "exec", "-d", "trading_bot", 
+                 "python", "scripts/run_paper_trading.py"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                await update.message.reply_text(
+                    "✅ *Trading Bot Started*\n\n"
+                    "Mode: Paper Trading\n"
+                    "Status: Running\n\n"
+                    "📊 Check dashboard: http://localhost:8501\n"
+                    "📱 You will receive trade alerts here",
+                    parse_mode="Markdown"
+                )
+            else:
+                await update.message.reply_text(
+                    f"❌ *Failed to start trading bot*\n\n"
+                    f"Error: {result.stderr}",
+                    parse_mode="Markdown"
+                )
+        except Exception as e:
+            logger.error(f"Error starting trading bot: {e}")
+            await update.message.reply_text(
+                f"❌ *Error*\n\n{str(e)}",
+                parse_mode="Markdown"
+            )
+    
+    async def _handle_stop_trading(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /stop_trading command"""
+        chat_id = update.effective_chat.id
+        
+        if not self._is_authorized(chat_id):
+            await update.message.reply_text("❌ Unauthorized")
+            return
+        
+        await update.message.reply_text(
+            "🛑 *Stopping Trading Bot*\n\n"
+            "Please wait...",
+            parse_mode="Markdown"
+        )
+        
+        try:
+            import subprocess
+            # Stop trading bot
+            result = subprocess.run(
+                ["docker", "compose", "exec", "trading_bot", 
+                 "pkill", "-f", "run_paper_trading.py"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            await update.message.reply_text(
+                "✅ *Trading Bot Stopped*\n\n"
+                "All positions closed (paper trading)\n"
+                "No real money affected",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Error stopping trading bot: {e}")
+            await update.message.reply_text(
+                f"❌ *Error*\n\n{str(e)}",
+                parse_mode="Markdown"
+            )
     
     async def send_alert(
         self,
