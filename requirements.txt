@@ -1,0 +1,47 @@
+# Core
+python-dotenv>=1.0.0
+
+# Bybit API
+pybit>=5.7.0
+
+# Data Processing
+pandas>=2.2.0
+numpy>=1.26.0
+
+# Technical Indicators (install from GitHub)
+# pandas-ta will be installed separately in Dockerfile
+
+# Database
+asyncpg>=0.29.0
+psycopg2-binary>=2.9.9
+
+# JSON Parsing
+ujson>=5.9.0
+
+# Testing
+pytest>=7.4.3
+pytest-asyncio>=0.21.1
+hypothesis>=6.92.1
+pytest-cov>=4.1.0
+
+# Configuration
+pyyaml>=6.0.1
+
+# Monitoring
+streamlit>=1.29.0
+plotly>=5.18.0
+
+# Telegram
+python-telegram-bot>=21.0
+
+# Utilities
+ntplib>=0.4.0
+aiohttp>=3.9.1
+
+# Type Checking
+mypy>=1.7.1
+
+# Code Quality
+black>=23.12.1
+flake8>=6.1.0
+isort>=5.13.2

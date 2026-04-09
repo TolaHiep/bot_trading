@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # TimescaleDB Database
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: trading_bot_db
+    environment:
+      POSTGRES_USER: trading_user
+      POSTGRES_PASSWORD: trading_pass
+      POSTGRES_DB: trading_bot
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trading_user -d trading_bot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - trading_network
+
+  # Trading Bot Application
+  trading_bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading_bot_app
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://trading_user:trading_pass@timescaledb:5432/trading_bot
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./config:/app/config
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+      - ./scripts:/app/scripts
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - trading_network
+    command: tail -f /dev/null  # Keep container running for development
+
+  # Optional: Streamlit Dashboard (for monitoring)
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading_bot_dashboard
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://trading_user:trading_pass@timescaledb:5432/trading_bot
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./src:/app/src
+      - ./config:/app/config
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - trading_network
+    command: streamlit run src/monitoring/dashboard.py
+    profiles:
+      - monitoring  # Only start when explicitly requested
+
+volumes:
+  timescaledb_data:
+
+networks:
+  trading_network:
+    driver: bridge

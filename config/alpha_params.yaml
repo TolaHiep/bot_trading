@@ -1,0 +1,84 @@
+# Alpha Model Parameters
+# Configuration for signal generation and false breakout filtering
+
+signal_generation:
+  # Confidence thresholds
+  min_confidence: 60  # Suppress signals below this confidence
+  max_confidence: 100
+  
+  # Multi-timeframe alignment
+  timeframes:
+    - "1m"
+    - "5m"
+    - "15m"
+  min_timeframe_alignment: 2  # Minimum number of timeframes that must agree
+  
+  # Volume confirmation
+  volume_multiplier: 1.5  # Volume must be > 1.5x average for breakout confirmation
+  volume_lookback: 20  # Number of bars for average volume calculation
+  
+  # Wyckoff phase weights
+  wyckoff_weights:
+    ACCUMULATION: 0.0  # No signals in accumulation
+    MARKUP: 1.0  # Full weight for buy signals
+    DISTRIBUTION: 0.0  # No signals in distribution
+    MARKDOWN: 1.0  # Full weight for sell signals
+    UNKNOWN: 0.0  # No signals when phase unknown
+  
+  # Order flow delta thresholds
+  delta_threshold: 0  # Delta must be > 0 for BUY, < 0 for SELL
+  delta_weight: 0.2  # Weight of delta in confidence calculation
+  
+  # Indicator weights
+  indicator_weights:
+    trend_alignment: 0.3  # EMA alignment weight
+    momentum: 0.2  # RSI/MACD weight
+    volatility: 0.1  # Bollinger Bands weight
+    wyckoff: 0.3  # Wyckoff phase weight
+    order_flow: 0.2  # Order flow delta weight
+    volume: 0.2  # Volume confirmation weight
+
+breakout_filter:
+  # False breakout detection
+  min_volume_ratio: 1.5  # Minimum volume ratio for valid breakout
+  min_price_move: 0.005  # Minimum 0.5% price move for breakout
+  
+  # Support/resistance levels
+  level_lookback: 50  # Number of bars to identify S/R levels
+  level_tolerance: 0.002  # 0.2% tolerance for level matching
+  
+  # Breakout confirmation
+  confirmation_bars: 2  # Number of bars to confirm breakout
+  retest_allowed: true  # Allow retest of broken level
+  retest_tolerance: 0.003  # 0.3% tolerance for retest
+  
+  # Volume profile
+  use_volume_profile: true
+  volume_profile_period: 24  # Hours for volume profile calculation
+
+risk_filters:
+  # Market condition filters
+  max_spread_pct: 0.001  # Maximum 0.1% spread
+  min_liquidity: 100000  # Minimum $100k liquidity
+  
+  # Volatility filters
+  max_atr_multiplier: 3.0  # Maximum ATR multiplier for entry
+  min_atr_multiplier: 0.5  # Minimum ATR multiplier for entry
+
+signal_types:
+  BUY:
+    required_conditions:
+      - wyckoff_phase: "MARKUP"
+      - delta_direction: "positive"
+      - price_action: "breakout"
+      - volume_confirmation: true
+  
+  SELL:
+    required_conditions:
+      - wyckoff_phase: "MARKDOWN"
+      - delta_direction: "negative"
+      - price_action: "breakdown"
+      - volume_confirmation: true
+  
+  NEUTRAL:
+    description: "Generated when conditions don't meet BUY or SELL criteria"
