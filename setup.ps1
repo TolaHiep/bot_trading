@@ -110,7 +110,7 @@ docker compose build
 Print-Info "Starting containers..."
 docker compose up -d
 
-Print-Info "Waiting for database to be ready (30 seconds)..."
+Print-Info "Waiting for database to be ready - 30 seconds..."
 Start-Sleep -Seconds 30
 
 # Check if containers are running

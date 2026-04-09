@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
+from tqdm import tqdm
 
 from src.connectors.bybit_rest import RESTClient
 from src.data.timescaledb_writer import TimescaleDBWriter
@@ -65,7 +66,21 @@ async def download_historical_klines(
         logger.error(f"Unsupported timeframe: {timeframe}")
         return 0
     
-    logger.info(f"Downloading {symbol} {timeframe} from {start_date} to {end_date}")
+    # Calculate total expected candles for progress bar
+    timeframe_minutes = {
+        '1m': 1,
+        '5m': 5,
+        '15m': 15,
+        '1h': 60,
+        '4h': 240,
+        '1d': 1440
+    }
+    total_minutes = int((end_date - start_date).total_seconds() / 60)
+    expected_candles = total_minutes // timeframe_minutes[timeframe]
+    
+    print(f"\n📊 Downloading {symbol} {timeframe}")
+    print(f"   Period: {start_date.date()} to {end_date.date()}")
+    print(f"   Expected: ~{expected_candles:,} candles")
     
     # Convert to milliseconds
     start_time = int(start_date.timestamp() * 1000)
@@ -73,6 +88,9 @@ async def download_historical_klines(
     
     total_klines = 0
     current_start = start_time
+    
+    # Progress bar
+    pbar = tqdm(total=expected_candles, desc=f"{symbol} {timeframe}", unit="candles", ncols=100)
     
     while current_start < end_time:
         try:
@@ -86,7 +104,6 @@ async def download_historical_klines(
             )
             
             if not klines:
-                logger.info(f"No more data available for {symbol} {timeframe}")
                 break
             
             # Bybit returns klines in reverse chronological order
@@ -112,7 +129,7 @@ async def download_historical_klines(
             await db_writer.batch_write_klines(kline_dicts)
             
             total_klines += len(kline_dicts)
-            logger.info(f"Downloaded {len(kline_dicts)} klines (total: {total_klines})")
+            pbar.update(len(kline_dicts))
             
             # Update start time for next batch
             current_start = int(klines[-1][0]) + 1
@@ -126,7 +143,9 @@ async def download_historical_klines(
             await asyncio.sleep(1)
             current_start += 200 * 60 * 1000  # Skip ahead
     
-    logger.info(f"Completed download: {total_klines} klines for {symbol} {timeframe}")
+    pbar.close()
+    print(f"✅ Completed: {total_klines:,} candles")
+    
     return total_klines
 
 
@@ -151,10 +170,14 @@ async def main():
         logger.error("Required: BYBIT_API_KEY, BYBIT_API_SECRET, DATABASE_URL")
         return
     
-    logger.info(f"Starting historical data download for {SYMBOL}")
-    logger.info(f"Date range: {start_date} to {end_date}")
-    logger.info(f"Timeframes: {TIMEFRAMES}")
-    logger.info(f"Mode: {'Testnet' if testnet else 'Mainnet'}")
+    print("\n" + "="*60)
+    print("📥 Historical Data Download")
+    print("="*60)
+    print(f"Symbol: {SYMBOL}")
+    print(f"Period: {start_date.date()} to {end_date.date()} (6 months)")
+    print(f"Timeframes: {', '.join(TIMEFRAMES)}")
+    print(f"Mode: {'Testnet' if testnet else 'Mainnet'}")
+    print("="*60 + "\n")
     
     # Initialize clients
     rest_client = RESTClient(
@@ -172,8 +195,10 @@ async def main():
         
         # Download data for each timeframe
         total_downloaded = 0
+        start_time = datetime.now()
         
-        for timeframe in TIMEFRAMES:
+        for i, timeframe in enumerate(TIMEFRAMES, 1):
+            print(f"\n[{i}/{len(TIMEFRAMES)}] Processing {timeframe}...")
             count = await download_historical_klines(
                 rest_client=rest_client,
                 db_writer=db_writer,
@@ -184,7 +209,15 @@ async def main():
             )
             total_downloaded += count
         
-        logger.info(f"Download complete! Total klines: {total_downloaded}")
+        elapsed = (datetime.now() - start_time).total_seconds()
+        
+        print("\n" + "="*60)
+        print("✅ Download Complete!")
+        print("="*60)
+        print(f"Total candles: {total_downloaded:,}")
+        print(f"Time elapsed: {elapsed:.1f} seconds ({elapsed/60:.1f} minutes)")
+        print(f"Average speed: {total_downloaded/elapsed:.0f} candles/sec")
+        print("="*60 + "\n")
         
         # Show buffer status
         buffer_status = db_writer.get_buffer_status()
