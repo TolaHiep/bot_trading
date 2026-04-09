@@ -32,7 +32,7 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://trading_user:trading_pass@timescaledb:5432/trading_bot
+      - DATABASE_URL=postgresql://trading_user:trading_pass@timescaledb:5432/trading_db
     volumes:
       - ./src:/app/src
       - ./tests:/app/tests
@@ -48,7 +48,29 @@ services:
       - trading_network
     command: tail -f /dev/null  # Keep container running for development
 
-  # Optional: Streamlit Dashboard (for monitoring)
+  # Telegram Bot Service
+  telegram_bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading_bot_telegram
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://trading_user:trading_pass@timescaledb:5432/trading_db
+    volumes:
+      - ./src:/app/src
+      - ./config:/app/config
+      - ./logs:/app/logs
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - trading_network
+    command: python -m src.monitoring.telegram_bot
+
+  # Streamlit Dashboard
   dashboard:
     build:
       context: .
@@ -57,7 +79,7 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://trading_user:trading_pass@timescaledb:5432/trading_bot
+      - DATABASE_URL=postgresql://trading_user:trading_pass@timescaledb:5432/trading_db
     ports:
       - "8501:8501"
     volumes:
@@ -69,9 +91,7 @@ services:
     restart: unless-stopped
     networks:
       - trading_network
-    command: streamlit run src/monitoring/dashboard.py
-    profiles:
-      - monitoring  # Only start when explicitly requested
+    command: streamlit run src/monitoring/dashboard.py --server.address=0.0.0.0
 
 volumes:
   timescaledb_data:

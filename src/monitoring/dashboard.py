@@ -4,6 +4,12 @@ Streamlit Dashboard - Real-time monitoring dashboard
 Hiển thị metrics, signals, positions và system health.
 """
 
+import sys
+from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
 import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -12,7 +18,7 @@ from decimal import Decimal
 from typing import Optional
 import time
 
-from .metrics_collector import MetricsCollector
+from src.monitoring.metrics_collector import MetricsCollector
 
 
 class Dashboard:
@@ -368,42 +374,53 @@ def run_dashboard(metrics_collector: MetricsCollector) -> None:
 
 
 if __name__ == "__main__":
-    # For standalone testing
-    from .metrics_collector import MetricsCollector
+    import os
+    from src.monitoring.metrics_collector import MetricsCollector
     
-    # Create mock metrics collector
-    collector = MetricsCollector()
+    # Get database URL from environment
+    database_url = os.getenv('DATABASE_URL')
     
-    # Add some mock data
-    collector.update_system_metrics(
-        api_status="healthy",
-        db_status="healthy",
-        last_tick_time=datetime.now(),
-        error_rate=Decimal("0.5"),
-        uptime_seconds=3600,
-        total_requests=1000,
-        failed_requests=5
-    )
-    
-    collector.update_trading_metrics(
-        current_balance=Decimal("10500"),
-        initial_balance=Decimal("10000"),
-        equity=Decimal("10500"),
-        total_pnl=Decimal("500"),
-        realized_pnl=Decimal("500"),
-        unrealized_pnl=Decimal("0"),
-        total_trades=10,
-        winning_trades=7,
-        losing_trades=3,
-        open_positions=0
-    )
-    
-    collector.add_signal(
-        symbol="BTCUSDT",
-        signal_type="BUY",
-        confidence=75,
-        wyckoff_phase="MARKUP",
-        order_flow_delta=Decimal("150.5")
-    )
+    if database_url:
+        # Use real database connection
+        collector = MetricsCollector()
+        # TODO: Load real metrics from database
+        st.info("Connected to database. Metrics will update from real trading data.")
+    else:
+        # Fallback to mock data for testing
+        collector = MetricsCollector()
+        
+        # Add some mock data
+        collector.update_system_metrics(
+            api_status="healthy",
+            db_status="healthy",
+            last_tick_time=datetime.now(),
+            error_rate=Decimal("0.5"),
+            uptime_seconds=3600,
+            total_requests=1000,
+            failed_requests=5
+        )
+        
+        collector.update_trading_metrics(
+            current_balance=Decimal("10500"),
+            initial_balance=Decimal("10000"),
+            equity=Decimal("10500"),
+            total_pnl=Decimal("500"),
+            realized_pnl=Decimal("500"),
+            unrealized_pnl=Decimal("0"),
+            total_trades=10,
+            winning_trades=7,
+            losing_trades=3,
+            open_positions=0
+        )
+        
+        collector.add_signal(
+            symbol="BTCUSDT",
+            signal_type="BUY",
+            confidence=75,
+            wyckoff_phase="MARKUP",
+            order_flow_delta=Decimal("150.5")
+        )
+        
+        st.warning("⚠️ Using mock data. Set DATABASE_URL to connect to real database.")
     
     run_dashboard(collector)

@@ -128,9 +128,21 @@ class TelegramBot:
         # Start bot
         await self.application.initialize()
         await self.application.start()
+        
+        # Set bot commands menu (for / autocomplete)
+        from telegram import BotCommand
+        commands = [
+            BotCommand("start", "Start bot and show welcome message"),
+            BotCommand("status", "System status and health"),
+            BotCommand("positions", "Open positions and unrealized P&L"),
+            BotCommand("pnl", "P&L summary and performance"),
+            BotCommand("help", "Show help message")
+        ]
+        await self.application.bot.set_my_commands(commands)
+        
         await self.application.updater.start_polling()
         
-        logger.info("Telegram bot started")
+        logger.info("Telegram bot started with commands menu")
     
     async def stop(self) -> None:
         """Stop Telegram bot"""

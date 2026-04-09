@@ -251,6 +251,26 @@ docker compose exec timescaledb psql -U trading_user -d trading_db -c "\dt"
 
 ### ✅ Sau khi setup xong
 
+**Tất cả services đã tự động khởi động:**
+- ✅ TimescaleDB (Database)
+- ✅ Trading Bot (Main application)
+- ✅ Telegram Bot (Alerts & commands)
+- ✅ Dashboard (Monitoring UI)
+
+**Truy cập:**
+- Dashboard: http://localhost:8501
+- Telegram Bot: Gửi `/start` trên Telegram
+
+**Kiểm tra services đang chạy:**
+```bash
+docker compose ps
+```
+
+**Tiếp theo:**
+1. [Download dữ liệu lịch sử](#bước-1-backtesting) (cho backtest)
+2. [Xem Dashboard](#using-the-dashboard)
+3. [Dùng Telegram Bot](#telegram-bot-commands)
+
 ---
 
 ## ⚙️ Configuration Parameters
@@ -627,13 +647,23 @@ docker compose up -d
 
 ## 📊 Using the Dashboard
 
-### Access
-```bash
-# Start dashboard
-docker compose --profile monitoring up -d dashboard
+Dashboard tự động khởi động cùng hệ thống.
 
-# Open browser
+### Access
+```
 http://localhost:8501
+```
+
+**Nếu không truy cập được:**
+```bash
+# Check dashboard status
+docker compose ps dashboard
+
+# View logs
+docker compose logs dashboard
+
+# Restart dashboard
+docker compose restart dashboard
 ```
 
 ### Dashboard Sections
@@ -695,11 +725,26 @@ http://localhost:8501
 
 ## 🤖 Telegram Bot Commands
 
+Telegram Bot tự động khởi động cùng hệ thống.
+
 ### Setup
 
-1. Tìm bot trên Telegram (username từ BotFather)
-2. Gửi `/start`
-3. Nếu "Unauthorized" → Chat ID chưa được thêm vào `.env`
+1. Tạo bot với @BotFather trên Telegram
+2. Thêm `TELEGRAM_BOT_TOKEN` và `TELEGRAM_CHAT_ID` vào `.env`
+3. Restart: `docker compose restart telegram_bot`
+4. Gửi `/start` cho bot
+
+**Nếu bot không phản hồi:**
+```bash
+# Check bot status
+docker compose ps telegram_bot
+
+# View logs
+docker compose logs telegram_bot
+
+# Restart bot
+docker compose restart telegram_bot
+```
 
 ### Commands
 
