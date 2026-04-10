@@ -35,6 +35,7 @@ from src.risk.position_sizing import PositionSizer
 from src.risk.kill_switch import KillSwitch, KillSwitchConfig
 from src.risk.stop_loss import StopLossEngine, StopLossConfig, StopLossMode, PositionSide as SLPositionSide
 from src.monitoring.metrics_collector import MetricsCollector
+from src.monitoring.account_monitor import AccountMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +149,14 @@ class TradingLoop:
         )
         self.position_sizer = PositionSizer()
         self.metrics_collector = MetricsCollector()
+        
+        # Initialize Account Monitor
+        self.account_monitor = AccountMonitor(
+            paper_trader=self.paper_trader,
+            initial_balance=initial_balance,
+            liquidation_threshold=Decimal("5.0")  # Trigger when equity < $5
+        )
+        logger.info("Account Monitor initialized: will auto-reset if equity < $5")
         
         # Mode-specific initialization
         if self.multi_symbol_enabled:
@@ -336,6 +345,13 @@ class TradingLoop:
             for symbol in symbols:
                 await self.scalping_loop.add_symbol(symbol)
             logger.info(f"Scalping loop now monitoring {len(self.scalping_loop.symbols)} symbols")
+        
+        # If scalping loop V2 exists, add all symbols to it
+        if hasattr(self, 'scalping_loop_v2') and self.scalping_loop_v2:
+            logger.info(f"Adding {len(symbols)} symbols to scalping loop V2...")
+            for symbol in symbols:
+                await self.scalping_loop_v2.add_symbol(symbol)
+            logger.info(f"Scalping loop V2 now monitoring {len(self.scalping_loop_v2.symbols)} symbols")
         
         # Start stop loss monitoring
         await self.stop_loss_engine.start_monitoring()
@@ -630,6 +646,10 @@ class TradingLoop:
                         # Also add to scalping loop if exists
                         if hasattr(self, 'scalping_loop') and self.scalping_loop:
                             await self.scalping_loop.add_symbol(symbol)
+                        
+                        # Also add to scalping loop V2 if exists
+                        if hasattr(self, 'scalping_loop_v2') and self.scalping_loop_v2:
+                            await self.scalping_loop_v2.add_symbol(symbol)
                     
                     # Remove old symbols
                     for symbol in removed:
@@ -657,6 +677,10 @@ class TradingLoop:
                         # Also remove from scalping loop if exists
                         if hasattr(self, 'scalping_loop') and self.scalping_loop:
                             await self.scalping_loop.remove_symbol(symbol)
+                        
+                        # Also remove from scalping loop V2 if exists
+                        if hasattr(self, 'scalping_loop_v2') and self.scalping_loop_v2:
+                            await self.scalping_loop_v2.remove_symbol(symbol)
                     
                     logger.info(
                         f"Symbol refresh complete: {len(added)} added, {len(removed)} removed, "
@@ -843,6 +867,56 @@ class TradingLoop:
             os.makedirs("logs", exist_ok=True)
             with open("logs/metrics.json", "w") as f:
                 json.dump(metrics_data, f, indent=2)
+            
+            # Write bot-specific metrics if bot_manager exists
+            if hasattr(self, 'bot_manager') and self.bot_manager:
+                # Get current prices for all bots
+                wyckoff_prices = current_prices.copy()
+                scalp_prices = {}
+                scalp_v2_prices = {}
+                
+                # Get scalp prices if scalping loops exist
+                if hasattr(self, 'scalping_loop') and self.scalping_loop:
+                    scalp_prices = {s: Decimal(str(p)) for s, p in self.scalping_loop.current_prices.items() if p}
+                
+                if hasattr(self, 'scalping_loop_v2') and self.scalping_loop_v2:
+                    scalp_v2_prices = {s: Decimal(str(p)) for s, p in self.scalping_loop_v2.current_prices.items() if p}
+                
+                # Write metrics for all bots
+                monitored = len(active_symbols) if self.multi_symbol_enabled else 1
+                
+                # Get scalp_v2 targets if available
+                if hasattr(self.bot_manager, 'scalp_v2_loop') and self.bot_manager.scalp_v2_loop:
+                    # Convert targets to serializable format
+                    targets = {}
+                    for symbol, target in self.bot_manager.scalp_v2_loop.position_targets.items():
+                        targets[symbol] = {
+                            "stop_loss": target.get("stop_loss", 0),
+                            "take_profit1": target.get("take_profit1", 0),
+                            "take_profit2": target.get("take_profit2", 0),
+                            "entry_price": target.get("entry_price", 0),
+                            "side": target.get("side", "")
+                        }
+                    self.bot_manager.scalp_v2_targets = targets
+                
+                self.bot_manager.write_all_metrics(
+                    wyckoff_prices=wyckoff_prices,
+                    scalp_prices=scalp_prices,
+                    scalp_v2_prices=scalp_v2_prices,
+                    monitored_symbols=monitored
+                )
+                
+                # Check liquidations for all bots
+                asyncio.create_task(
+                    self.bot_manager.check_liquidations(
+                        wyckoff_prices=wyckoff_prices,
+                        scalp_prices=scalp_prices,
+                        scalp_v2_prices=scalp_v2_prices
+                    )
+                )
+            else:
+                # Fallback: Check for account liquidation (old method)
+                asyncio.create_task(self.account_monitor.check_and_handle_liquidation(current_prices))
         
         except Exception as e:
             logger.error(f"Error printing status: {e}")

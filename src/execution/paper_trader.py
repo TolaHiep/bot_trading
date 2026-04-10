@@ -291,7 +291,9 @@ class PaperTrader:
             side=side,
             entry_price=entry_price,
             quantity=quantity,
-            strategy_name=strategy_name
+            strategy_name=strategy_name,
+            margin_locked=required_balance,  # Store locked margin + commission
+            leverage=leverage
         )
         
         self.positions[position.position_id] = position
@@ -341,17 +343,7 @@ class PaperTrader:
             f"(slippage: {analysis.expected_slippage:.4f}%, commission: {commission:.2f})"
         )
         
-        # Notify Telegram
-        import asyncio
-        from src.monitoring.notifier import send_telegram_alert
-        side_emoji = "🟢" if side == OrderSide.BUY else "🔴"
-        msg = (
-            f"{side_emoji} <b>OPENED {side.value.upper()}</b> • {strategy_name.upper()}\n"
-            f"<b>{symbol}</b> × {quantity:.6f}\n"
-            f"Entry: <code>${entry_price:.2f}</code>\n"
-            f"Size: <code>${position_value:.2f}</code>"
-        )
-        asyncio.create_task(send_telegram_alert(msg))
+        # Telegram notification disabled - use /scalp, /scalp_v2, /wyckoff commands for reports
         
         return position
     
@@ -398,8 +390,10 @@ class PaperTrader:
         # Net P&L after commission
         net_pnl = pnl - commission
         
-        # Update account
-        self.account.current_balance += position_value + net_pnl
+        # Update account: Return locked margin + net P&L
+        # When we opened: balance -= margin_locked (which included entry commission)
+        # When we close: balance += margin_locked + net_pnl
+        self.account.current_balance += position.margin_locked + net_pnl
         self.account.realized_pnl += net_pnl
         
         # Update drawdown monitor
@@ -442,18 +436,7 @@ class PaperTrader:
             f"{position.symbol} @ {exit_price} (P&L: {net_pnl:.2f})"
         )
         
-        # Notify Telegram
-        import asyncio
-        from src.monitoring.notifier import send_telegram_alert
-        pnl_emoji = "🟢" if net_pnl > 0 else "🔴"
-        pnl_pct = (net_pnl / position_value) * 100 if position_value > 0 else 0
-        msg = (
-            f"{pnl_emoji} <b>CLOSED {position.side.value.upper()}</b> • {position.strategy_name.upper()}\n"
-            f"<b>{position.symbol}</b> × {position.quantity:.6f}\n"
-            f"Exit: <code>${exit_price:.2f}</code> • {reason}\n"
-            f"P&L: <code>{net_pnl:+.2f} USDT</code> ({pnl_pct:+.2f}%)"
-        )
-        asyncio.create_task(send_telegram_alert(msg))
+        # Telegram notification disabled - use /scalp, /scalp_v2, /wyckoff commands for reports
         
         return net_pnl
     

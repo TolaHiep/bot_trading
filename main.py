@@ -29,9 +29,9 @@ logger = logging.getLogger(__name__)
 
 
 async def main():
-    """Main entry point for live trading"""
+    """Main entry point for live trading with 3 independent bots"""
     print("=" * 60)
-    print("🤖 Trading Bot - Live Mode")
+    print("🤖 Trading Bot - 3 Bots Live Mode")
     print("=" * 60)
     print()
     
@@ -53,70 +53,104 @@ async def main():
         
         # Get settings
         symbol = config.get('symbol', 'BTCUSDT')
-        initial_balance = Decimal(str(config.get('initial_balance', 100)))
         multi_symbol_enabled = config.get('multi_symbol', {}).get('enabled', False)
         scalping_enabled = config.get('scalping', {}).get('enabled', False)
         
         print(f"Symbol: {symbol}")
-        print(f"Initial Balance: {initial_balance} USDT")
         print(f"Multi-Symbol: {'Enabled' if multi_symbol_enabled else 'Disabled'}")
         print(f"Scalping: {'Enabled' if scalping_enabled else 'Disabled'}")
         print()
+        print("💰 3 Independent Bots:")
+        print("  1. Wyckoff (Main): $100")
+        print("  2. Scalping V1: $100")
+        print("  3. Scalping V2: $100")
+        print()
         
-        # Import trading loop
+        # Initialize Multi-Bot Manager
+        from src.core.multi_bot_manager import MultiBotManager
+        
+        bot_manager = MultiBotManager(config_path=str(config_file))
+        logger.info("MultiBotManager initialized with 3 bots")
+        
+        # Import trading loops
         from src.core.trading_loop import TradingLoop
+        from src.core.scalping_loop import ScalpingLoop
+        from src.core.scalping_loop_v2 import ScalpingLoopV2
         
-        # Create trading loop
-        trading_loop = TradingLoop(
+        # 1. Create Wyckoff (Main) trading loop
+        wyckoff_loop = TradingLoop(
             symbol=symbol,
-            initial_balance=initial_balance,
+            initial_balance=Decimal("100"),
             testnet=False,  # Use mainnet (real API)
             config_path=str(config_file)
         )
+        # Replace paper trader with bot manager's trader
+        wyckoff_loop.paper_trader = bot_manager.get_wyckoff_trader()
+        wyckoff_loop.account_monitor = bot_manager.get_wyckoff_monitor()
         
-        # Start scalping loop if enabled
-        scalping_loop = None
+        logger.info("Wyckoff bot initialized")
+        
+        # 2. Create Scalping V1 loop if enabled
+        scalp_v1_loop = None
         if scalping_enabled:
-            from src.core.scalping_loop import ScalpingLoop
-            
-            # Get scalping symbols from config
             scalping_symbols = config.get('scalping', {}).get('symbols', [])
             
-            # If empty, use multi_symbol scanner results
-            if not scalping_symbols:
-                if multi_symbol_enabled and hasattr(trading_loop, 'multi_symbol_manager'):
-                    # Get all symbols from multi_symbol_manager after it's initialized
-                    # We'll start scalping loop after trading_loop starts
-                    logger.info("Scalping will use all symbols from multi-symbol scanner")
-                    scalping_symbols = []  # Will be populated dynamically
-                else:
-                    scalping_symbols = [symbol]
-                    logger.info(f"Scalping using single symbol: {symbol}")
-            else:
-                logger.info(f"Scalping using {len(scalping_symbols)} configured symbols")
-            
-            scalping_loop = ScalpingLoop(
-                paper_trader=trading_loop.paper_trader,
+            scalp_v1_loop = ScalpingLoop(
+                paper_trader=bot_manager.get_scalp_trader(),
                 symbols=scalping_symbols if scalping_symbols else [symbol],
                 testnet=False
             )
             
-            # If using multi-symbol, we'll update symbols after scanner runs
+            # Store reference for symbol sync
             if not scalping_symbols and multi_symbol_enabled:
-                trading_loop.scalping_loop = scalping_loop  # Store reference
+                wyckoff_loop.scalping_loop = scalp_v1_loop
             
-            asyncio.create_task(scalping_loop.start())
-            logger.info(f"Scalping loop started")
+            logger.info("Scalping V1 bot initialized")
         
-        # Start main trading loop
-        await trading_loop.start()
+        # 3. Create Scalping V2 loop if enabled
+        scalp_v2_loop = None
+        if scalping_enabled:
+            scalping_symbols = config.get('scalping', {}).get('symbols', [])
+            
+            scalp_v2_loop = ScalpingLoopV2(
+                paper_trader=bot_manager.get_scalp_v2_trader(),
+                symbols=scalping_symbols if scalping_symbols else [symbol],
+                testnet=False
+            )
+            
+            # Store reference for symbol sync
+            if not scalping_symbols and multi_symbol_enabled:
+                wyckoff_loop.scalping_loop_v2 = scalp_v2_loop
+            
+            logger.info("Scalping V2 bot initialized")
+        
+        # Store bot manager in wyckoff loop for metrics writing
+        wyckoff_loop.bot_manager = bot_manager
+        
+        # Store scalp_v2_loop reference in bot_manager for targets
+        if scalp_v2_loop:
+            bot_manager.scalp_v2_loop = scalp_v2_loop
+        
+        # Start all bots concurrently
+        tasks = [wyckoff_loop.start()]
+        
+        if scalp_v1_loop:
+            tasks.append(scalp_v1_loop.start())
+        
+        if scalp_v2_loop:
+            tasks.append(scalp_v2_loop.start())
+        
+        logger.info(f"Starting {len(tasks)} bots...")
+        print(f"🚀 Starting {len(tasks)} bots...\n")
+        
+        await asyncio.gather(*tasks)
     
     except KeyboardInterrupt:
         logger.info("Shutting down...")
-        print("\n👋 Bot stopped by user")
+        print("\n👋 All bots stopped by user")
     
     except Exception as e:
-        logger.error(f"Error starting bot: {e}", exc_info=True)
+        logger.error(f"Error starting bots: {e}", exc_info=True)
         print(f"\n❌ Error: {e}")
         import traceback
         traceback.print_exc()

@@ -95,6 +95,8 @@ class Position:
     opened_at: datetime = field(default_factory=datetime.now)
     pnl: Decimal = Decimal("0")
     strategy_name: str = "main"
+    margin_locked: Decimal = Decimal("0")  # Margin locked for this position
+    leverage: Decimal = Decimal("1.0")  # Leverage used
     
     def calculate_pnl(self, current_price: Decimal) -> Decimal:
         """Calculate unrealized P&L"""

@@ -19,13 +19,55 @@ multi_symbol:
 # Scalping Configuration
 scalping:
   enabled: true
-  symbols: []  # Empty = use multi_symbol scanner results (79 coins)
-  rsi_period: 7
-  ema_periods: [9, 21, 200]
-  bb_params: [20, 2]
-  risk_per_trade: 0.05  # 5%
-  leverage: 20.0  # 20x
-  daily_stop_loss: 0.02 # 2%
+  symbols: []  # Empty = use multi_symbol scanner results
+  
+  # Entry Signals
+  entry:
+    rsi_period: 14
+    rsi_oversold: 40
+    rsi_overbought: 60
+    volume_multiplier: 1.5  # Volume > 1.5x average
+    delta_threshold: 100  # Order flow delta threshold
+    bb_period: 20
+    bb_std: 2
+    ema_fast: 9
+    ema_slow: 21
+    
+  # Stop Loss
+  stop_loss:
+    method: "atr"  # "atr", "fixed", "structure"
+    atr_period: 14
+    atr_multiplier: 1.0
+    fixed_pct: 0.004  # 0.4%
+    breakeven_profit_pct: 0.003  # 0.3% - Move to breakeven
+    breakeven_lock_pct: 0.005  # 0.5% - Lock profit at +0.2%
+    
+  # Take Profit
+  take_profit:
+    target1_pct: 0.004  # 0.4% (R:R 1:1)
+    target2_pct: 0.008  # 0.8% (R:R 1:2)
+    use_bb_exit: true  # Exit at Bollinger Bands
+    use_resistance_exit: true  # Exit before resistance/support
+    trailing_activation_pct: 0.005  # 0.5%
+    trailing_distance_pct: 0.002  # 0.2%
+    
+  # Risk Management
+  risk:
+    risk_per_trade: 0.025  # 2.5%
+    leverage: 12.0  # 12x
+    max_positions: 5
+    max_exposure_pct: 0.50  # 50%
+    
+  # Kill Switch
+  kill_switch:
+    max_consecutive_losses: 3
+    cooldown_minutes: 15
+    daily_drawdown_limit: 0.03  # 3%
+    
+  # Fees
+  fees:
+    taker_fee: 0.00055  # 0.055%
+    min_profit_multiplier: 3.0  # Min profit = 3x fees
 
 
 # Alpha Model Configuration

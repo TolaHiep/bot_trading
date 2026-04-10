@@ -124,7 +124,12 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("positions", self._handle_positions))
         self.application.add_handler(CommandHandler("pnl", self._handle_pnl))
         self.application.add_handler(CommandHandler("scalp", self._handle_scalp))
+        self.application.add_handler(CommandHandler("scalp_v2", self._handle_scalp_v2))
         self.application.add_handler(CommandHandler("wyckoff", self._handle_wyckoff))
+        self.application.add_handler(CommandHandler("scalp_pos", self._handle_scalp_positions))
+        self.application.add_handler(CommandHandler("scalp_v2_pos", self._handle_scalp_v2_positions))
+        self.application.add_handler(CommandHandler("wyckoff_pos", self._handle_wyckoff_positions))
+        self.application.add_handler(CommandHandler("all", self._handle_all_bots))
         self.application.add_handler(CommandHandler("help", self._handle_help))
         
         # Start bot
@@ -138,11 +143,14 @@ class TelegramBot:
         from telegram import BotCommand
         commands = [
             BotCommand("start", "Bắt đầu và xem hướng dẫn"),
+            BotCommand("all", "Báo cáo tổng hợp cả 3 bot"),
             BotCommand("status", "Dashboard sức khỏe bot"),
-            BotCommand("positions", "Lệnh đang Hold hiện tại"),
-            BotCommand("pnl", "Quản lý tài chính tổng quát"),
-            BotCommand("scalp", "Thống kê bot Scalping"),
-            BotCommand("wyckoff", "Thống kê bot Wyckoff (Main)"),
+            BotCommand("wyckoff", "Báo cáo bot Wyckoff"),
+            BotCommand("wyckoff_pos", "Lệnh đang chạy Wyckoff"),
+            BotCommand("scalp", "Báo cáo bot Scalping V1"),
+            BotCommand("scalp_pos", "Lệnh đang chạy Scalp V1"),
+            BotCommand("scalp_v2", "Báo cáo bot Scalping V2"),
+            BotCommand("scalp_v2_pos", "Lệnh đang chạy Scalp V2"),
             BotCommand("help", "Hướng dẫn sử dụng chi tiết")
         ]
         await self.application.bot.set_my_commands(commands)
@@ -182,18 +190,20 @@ class TelegramBot:
         
         await update.message.reply_text(
             "🤖 <b>Quantitative Trading Bot</b>\n\n"
-            "📊 <b>Commands</b>\n"
+            "📊 <b>Bot Commands</b>\n"
+            "/all • Báo cáo tổng hợp cả 3 bot\n"
+            "/wyckoff • Wyckoff strategy (Main)\n"
+            "/scalp • Scalping V1 strategy\n"
+            "/scalp_v2 • Scalping V2 strategy\n"
             "/status • System health\n"
-            "/positions • Open positions\n"
-            "/pnl • Performance metrics\n"
-            "/scalp • Scalping stats\n"
-            "/wyckoff • Main strategy stats\n"
             "/help • Command guide\n\n"
-            "⚡ <b>Execution-Based Alerts</b>\n"
-            "You'll receive notifications only when:\n"
-            "• Positions are opened\n"
-            "• Positions are closed\n\n"
-            "💡 Paper trading mode • Real-time data",
+            "💰 <b>3 Bots Running</b>\n"
+            "Each bot has separate $100 wallet\n"
+            "Cross margin enabled\n\n"
+            "⚡ <b>Notifications</b>\n"
+            "Position opened/closed only\n"
+            "No spam alerts\n\n"
+            "💡 Paper trading • Real-time data",
             parse_mode="HTML"
         )
     
@@ -486,7 +496,7 @@ class TelegramBot:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Handle /scalp command - Show scalping bot statistics"""
+        """Handle /scalp command - Show scalping V1 bot statistics"""
         chat_id = update.effective_chat.id
         
         if not self._is_authorized(chat_id):
@@ -496,64 +506,141 @@ class TelegramBot:
         try:
             import json
             import os
-            import yaml
             
-            # Check if scalping is enabled
-            enabled = False
-            scalp_config = {}
-            if os.path.exists("config/config.yaml"):
-                with open("config/config.yaml", "r") as f:
-                    config = yaml.safe_load(f)
-                scalp_config = config.get("scalping", {})
-                enabled = scalp_config.get("enabled", False)
-            
-            if not enabled:
+            # Read metrics from scalp specific file
+            metrics_file = "logs/metrics_scalp.json"
+            if not os.path.exists(metrics_file):
                 await update.message.reply_text(
-                    "⚡ <b>Scalping Strategy</b>\n\n"
-                    "Status: 🔴 Disabled\n"
-                    "<i>Enable in config.yaml</i>",
+                    "⚡ <b>Scalping V1 Strategy</b>\n\n"
+                    "Status: 🔴 Not Running\n"
+                    "<i>Bot chưa được khởi động</i>",
                     parse_mode="HTML"
                 )
                 return
             
-            # Read metrics from file
-            metrics_file = "logs/metrics.json"
-            if os.path.exists(metrics_file):
-                with open(metrics_file, "r") as f:
-                    data = json.load(f)
-                
-                strategies = data.get("strategies", {})
-                scalp_stats = strategies.get("scalp", {})
-                
-                total_trades = scalp_stats.get("total_trades", 0)
-                winning = scalp_stats.get("winning_trades", 0)
-                losing = scalp_stats.get("losing_trades", 0)
-                win_rate = scalp_stats.get("win_rate", 0)
-                realized_pnl = scalp_stats.get("realized_pnl", 0)
-                open_pos = scalp_stats.get("open_positions", 0)
-                
-                pnl_emoji = "🟢" if realized_pnl >= 0 else "🔴"
-                
-                bb_params = scalp_config.get('bb_params', [20, 2])
-                message = (
-                    f"⚡ <b>Scalping Strategy</b>\n\n"
-                    f"Status: 🟢 Active • 1m timeframe\n"
-                    f"Config: RSI({scalp_config.get('rsi_period', 7)}) • "
-                    f"BB({bb_params[0]},{bb_params[1]})\n"
-                    f"Risk: {scalp_config.get('risk_per_trade', 0.01)*100}%\n\n"
-                    f"<b>Performance</b>\n"
-                    f"Trades: {total_trades} ({winning}W/{losing}L)\n"
-                    f"Win Rate: <code>{win_rate:.1f}%</code>\n"
-                    f"{pnl_emoji} P&L: <code>{realized_pnl:+.2f} USDT</code>\n"
-                    f"Open: {open_pos} positions"
-                )
-                
-                await update.message.reply_text(message, parse_mode="HTML")
-            else:
-                await update.message.reply_text("⚠️ Không tìm thấy dữ liệu metrics")
+            with open(metrics_file, "r") as f:
+                data = json.load(f)
+            
+            account = data.get("account", {})
+            stats = data.get("stats", {})
+            config = data.get("config", {})
+            
+            # Account info
+            balance = account.get("balance", 0)
+            equity = account.get("equity", 0)
+            realized_pnl = account.get("realized_pnl", 0)
+            unrealized_pnl = account.get("unrealized_pnl", 0)
+            total_pnl = realized_pnl + unrealized_pnl
+            
+            # Stats
+            total_trades = stats.get("total_trades", 0)
+            winning = stats.get("winning_trades", 0)
+            losing = stats.get("losing_trades", 0)
+            win_rate = (winning / total_trades * 100) if total_trades > 0 else 0
+            open_positions = stats.get("open_positions", 0)
+            
+            # Emojis
+            pnl_emoji = "🟢" if total_pnl >= 0 else "🔴"
+            status_emoji = "🟢" if equity > 5 else "🔴"
+            
+            message = (
+                f"⚡ <b>Scalping V1 Strategy</b>\n\n"
+                f"Status: {status_emoji} Active • 1m timeframe\n"
+                f"Risk: {config.get('risk_per_trade', 0.05)*100}% • "
+                f"Leverage: {config.get('leverage', 20)}x\n\n"
+                f"<b>Account (Cross Margin)</b>\n"
+                f"Balance: <code>${balance:.2f}</code>\n"
+                f"Equity: <code>${equity:.2f}</code>\n"
+                f"{pnl_emoji} Total P&L: <code>{total_pnl:+.2f}</code>\n"
+                f"Realized: <code>{realized_pnl:+.2f}</code> • "
+                f"Unrealized: <code>{unrealized_pnl:+.2f}</code>\n\n"
+                f"<b>Performance</b>\n"
+                f"Trades: {total_trades} ({winning}W/{losing}L)\n"
+                f"Win Rate: <code>{win_rate:.1f}%</code>\n"
+                f"Open: {open_positions} positions"
+            )
+            
+            await update.message.reply_text(message, parse_mode="HTML")
                 
         except Exception as e:
             logger.error(f"Error in /scalp command: {e}")
+            await update.message.reply_text(f"⚠️ Lỗi: {e}")
+    
+    async def _handle_scalp_v2(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /scalp_v2 command - Show scalping V2 bot statistics"""
+        chat_id = update.effective_chat.id
+        
+        if not self._is_authorized(chat_id):
+            await update.message.reply_text("❌ Unauthorized")
+            return
+        
+        try:
+            import json
+            import os
+            
+            # Read metrics from scalp_v2 specific file
+            metrics_file = "logs/metrics_scalp_v2.json"
+            if not os.path.exists(metrics_file):
+                await update.message.reply_text(
+                    "⚡ <b>Scalping V2 Strategy</b>\n\n"
+                    "Status: 🔴 Not Running\n"
+                    "<i>Bot chưa được khởi động</i>",
+                    parse_mode="HTML"
+                )
+                return
+            
+            with open(metrics_file, "r") as f:
+                data = json.load(f)
+            
+            account = data.get("account", {})
+            stats = data.get("stats", {})
+            config = data.get("config", {})
+            
+            # Account info
+            balance = account.get("balance", 0)
+            equity = account.get("equity", 0)
+            realized_pnl = account.get("realized_pnl", 0)
+            unrealized_pnl = account.get("unrealized_pnl", 0)
+            total_pnl = realized_pnl + unrealized_pnl
+            
+            # Stats
+            total_trades = stats.get("total_trades", 0)
+            winning = stats.get("winning_trades", 0)
+            losing = stats.get("losing_trades", 0)
+            win_rate = (winning / total_trades * 100) if total_trades > 0 else 0
+            open_positions = stats.get("open_positions", 0)
+            
+            # Emojis
+            pnl_emoji = "🟢" if total_pnl >= 0 else "🔴"
+            status_emoji = "🟢" if equity > 5 else "🔴"
+            
+            message = (
+                f"⚡ <b>Scalping V2 Strategy</b>\n\n"
+                f"Status: {status_emoji} Active • 1m timeframe\n"
+                f"Risk: {config.get('risk_per_trade', 0.025)*100}% • "
+                f"Leverage: {config.get('leverage', 12)}x\n"
+                f"TP: {config.get('tp1_pct', 0.004)*100}%/{config.get('tp2_pct', 0.008)*100}% • "
+                f"SL: {config.get('sl_method', 'atr')}\n\n"
+                f"<b>Account (Cross Margin)</b>\n"
+                f"Balance: <code>${balance:.2f}</code>\n"
+                f"Equity: <code>${equity:.2f}</code>\n"
+                f"{pnl_emoji} Total P&L: <code>{total_pnl:+.2f}</code>\n"
+                f"Realized: <code>{realized_pnl:+.2f}</code> • "
+                f"Unrealized: <code>{unrealized_pnl:+.2f}</code>\n\n"
+                f"<b>Performance</b>\n"
+                f"Trades: {total_trades} ({winning}W/{losing}L)\n"
+                f"Win Rate: <code>{win_rate:.1f}%</code>\n"
+                f"Open: {open_positions} positions"
+            )
+            
+            await update.message.reply_text(message, parse_mode="HTML")
+                
+        except Exception as e:
+            logger.error(f"Error in /scalp_v2 command: {e}")
             await update.message.reply_text(f"⚠️ Lỗi: {e}")
     
     async def _handle_wyckoff(
@@ -572,44 +659,417 @@ class TelegramBot:
             import json
             import os
             
-            # Read metrics from file
-            metrics_file = "logs/metrics.json"
-            if os.path.exists(metrics_file):
-                with open(metrics_file, "r") as f:
-                    data = json.load(f)
-                
-                strategies = data.get("strategies", {})
-                main_stats = strategies.get("main", {})
-                
-                total_trades = main_stats.get("total_trades", 0)
-                winning = main_stats.get("winning_trades", 0)
-                losing = main_stats.get("losing_trades", 0)
-                win_rate = main_stats.get("win_rate", 0)
-                realized_pnl = main_stats.get("realized_pnl", 0)
-                open_pos = main_stats.get("open_positions", 0)
-                
-                pnl_emoji = "🟢" if realized_pnl >= 0 else "🔴"
-                
-                mode = data.get("mode", "single_symbol")
-                mode_text = "Multi-Symbol" if mode == "multi_symbol" else "Single-Symbol"
-                
-                message = (
-                    f"📊 <b>Wyckoff Strategy</b> (Main)\n\n"
-                    f"Status: 🟢 Active • {mode_text}\n"
-                    f"Timeframes: 5m, 15m, 1h\n\n"
-                    f"<b>Performance (All Symbols)</b>\n"
-                    f"Trades: {total_trades} ({winning}W/{losing}L)\n"
-                    f"Win Rate: <code>{win_rate:.1f}%</code>\n"
-                    f"{pnl_emoji} P&L: <code>{realized_pnl:+.2f} USDT</code>\n"
-                    f"Open: {open_pos} positions"
+            # Read metrics from wyckoff specific file
+            metrics_file = "logs/metrics_wyckoff.json"
+            if not os.path.exists(metrics_file):
+                await update.message.reply_text(
+                    "📊 <b>Wyckoff Strategy</b>\n\n"
+                    "Status: 🔴 Not Running\n"
+                    "<i>Bot chưa được khởi động</i>",
+                    parse_mode="HTML"
                 )
-                
-                await update.message.reply_text(message, parse_mode="HTML")
-            else:
-                await update.message.reply_text("⚠️ Không tìm thấy dữ liệu metrics")
+                return
+            
+            with open(metrics_file, "r") as f:
+                data = json.load(f)
+            
+            account = data.get("account", {})
+            stats = data.get("stats", {})
+            config = data.get("config", {})
+            
+            # Account info
+            balance = account.get("balance", 0)
+            equity = account.get("equity", 0)
+            realized_pnl = account.get("realized_pnl", 0)
+            unrealized_pnl = account.get("unrealized_pnl", 0)
+            total_pnl = realized_pnl + unrealized_pnl
+            
+            # Stats
+            total_trades = stats.get("total_trades", 0)
+            winning = stats.get("winning_trades", 0)
+            losing = stats.get("losing_trades", 0)
+            win_rate = (winning / total_trades * 100) if total_trades > 0 else 0
+            open_positions = stats.get("open_positions", 0)
+            monitored_symbols = stats.get("monitored_symbols", 0)
+            
+            # Emojis
+            pnl_emoji = "🟢" if total_pnl >= 0 else "🔴"
+            status_emoji = "🟢" if equity > 5 else "🔴"
+            
+            mode = config.get("mode", "multi_symbol")
+            mode_text = "Multi-Symbol" if mode == "multi_symbol" else "Single-Symbol"
+            
+            message = (
+                f"📊 <b>Wyckoff Strategy</b> (Main)\n\n"
+                f"Status: {status_emoji} Active • {mode_text}\n"
+                f"Timeframes: 5m, 15m, 1h\n"
+                f"Monitoring: {monitored_symbols} symbols\n\n"
+                f"<b>Account (Cross Margin)</b>\n"
+                f"Balance: <code>${balance:.2f}</code>\n"
+                f"Equity: <code>${equity:.2f}</code>\n"
+                f"{pnl_emoji} Total P&L: <code>{total_pnl:+.2f}</code>\n"
+                f"Realized: <code>{realized_pnl:+.2f}</code> • "
+                f"Unrealized: <code>{unrealized_pnl:+.2f}</code>\n\n"
+                f"<b>Performance</b>\n"
+                f"Trades: {total_trades} ({winning}W/{losing}L)\n"
+                f"Win Rate: <code>{win_rate:.1f}%</code>\n"
+                f"Open: {open_positions} positions"
+            )
+            
+            await update.message.reply_text(message, parse_mode="HTML")
                 
         except Exception as e:
             logger.error(f"Error in /wyckoff command: {e}")
+            await update.message.reply_text(f"⚠️ Lỗi: {e}")
+    
+    async def _handle_scalp_positions(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /scalp_pos command - Show Scalp V1 open positions"""
+        chat_id = update.effective_chat.id
+        
+        if not self._is_authorized(chat_id):
+            await update.message.reply_text("❌ Unauthorized")
+            return
+        
+        try:
+            import json
+            import os
+            
+            # Read positions from scalp specific file
+            metrics_file = "logs/metrics_scalp_positions.json"
+            if not os.path.exists(metrics_file):
+                await update.message.reply_text(
+                    "⚡ <b>Scalp V1 Positions</b>\n\n"
+                    "No open positions",
+                    parse_mode="HTML"
+                )
+                return
+            
+            with open(metrics_file, "r") as f:
+                data = json.load(f)
+            
+            positions = data.get("positions", [])
+            account = data.get("account", {})
+            
+            if not positions:
+                await update.message.reply_text(
+                    "⚡ <b>Scalp V1 Positions</b>\n\n"
+                    "No open positions",
+                    parse_mode="HTML"
+                )
+                return
+            
+            # Build message
+            message = f"⚡ <b>Scalp V1 Open Positions</b> ({len(positions)})\n\n"
+            
+            for pos in positions[:10]:  # Limit to 10
+                symbol = pos.get("symbol", "N/A")
+                side = pos.get("side", "N/A")
+                entry_price = pos.get("entry_price", 0)
+                current_price = pos.get("current_price", entry_price)
+                quantity = pos.get("quantity", 0)
+                unrealized_pnl = pos.get("unrealized_pnl", 0)
+                
+                pnl_emoji = "🟢" if unrealized_pnl >= 0 else "🔴"
+                pnl_pct = (unrealized_pnl / (entry_price * quantity)) * 100 if (entry_price * quantity) > 0 else 0
+                
+                message += (
+                    f"{pnl_emoji} <b>{symbol}</b> {side}\n"
+                    f"Entry: <code>${entry_price:.4f}</code> • Now: <code>${current_price:.4f}</code>\n"
+                    f"Qty: {quantity:.6f} • P&L: <code>{unrealized_pnl:+.2f}</code> ({pnl_pct:+.2f}%)\n\n"
+                )
+            
+            if len(positions) > 10:
+                message += f"<i>+{len(positions)-10} more positions</i>\n\n"
+            
+            message += (
+                f"<b>Account</b>\n"
+                f"Balance: <code>${account.get('balance', 0):.2f}</code>\n"
+                f"Equity: <code>${account.get('equity', 0):.2f}</code>\n"
+                f"Unrealized: <code>{account.get('unrealized_pnl', 0):+.2f}</code>"
+            )
+            
+            await update.message.reply_text(message, parse_mode="HTML")
+                
+        except Exception as e:
+            logger.error(f"Error in /scalp_pos command: {e}")
+            await update.message.reply_text(f"⚠️ Lỗi: {e}")
+    
+    async def _handle_scalp_v2_positions(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /scalp_v2_pos command - Show Scalp V2 open positions"""
+        chat_id = update.effective_chat.id
+        
+        if not self._is_authorized(chat_id):
+            await update.message.reply_text("❌ Unauthorized")
+            return
+        
+        try:
+            import json
+            import os
+            
+            # Read positions from scalp_v2 specific file
+            metrics_file = "logs/metrics_scalp_v2_positions.json"
+            if not os.path.exists(metrics_file):
+                await update.message.reply_text(
+                    "⚡ <b>Scalp V2 Positions</b>\n\n"
+                    "No open positions",
+                    parse_mode="HTML"
+                )
+                return
+            
+            with open(metrics_file, "r") as f:
+                data = json.load(f)
+            
+            positions = data.get("positions", [])
+            account = data.get("account", {})
+            targets = data.get("targets", {})
+            
+            if not positions:
+                await update.message.reply_text(
+                    "⚡ <b>Scalp V2 Positions</b>\n\n"
+                    "No open positions",
+                    parse_mode="HTML"
+                )
+                return
+            
+            # Build message
+            message = f"⚡ <b>Scalp V2 Open Positions</b> ({len(positions)})\n\n"
+            
+            for pos in positions[:10]:  # Limit to 10
+                symbol = pos.get("symbol", "N/A")
+                side = pos.get("side", "N/A")
+                entry_price = pos.get("entry_price", 0)
+                current_price = pos.get("current_price", entry_price)
+                quantity = pos.get("quantity", 0)
+                unrealized_pnl = pos.get("unrealized_pnl", 0)
+                
+                # Get targets for this symbol
+                target = targets.get(symbol, {})
+                sl = target.get("stop_loss", 0)
+                tp1 = target.get("take_profit1", 0)
+                tp2 = target.get("take_profit2", 0)
+                
+                pnl_emoji = "🟢" if unrealized_pnl >= 0 else "🔴"
+                pnl_pct = (unrealized_pnl / (entry_price * quantity)) * 100 if (entry_price * quantity) > 0 else 0
+                
+                message += (
+                    f"{pnl_emoji} <b>{symbol}</b> {side}\n"
+                    f"Entry: <code>${entry_price:.4f}</code> • Now: <code>${current_price:.4f}</code>\n"
+                    f"Qty: {quantity:.6f} • P&L: <code>{unrealized_pnl:+.2f}</code> ({pnl_pct:+.2f}%)\n"
+                )
+                
+                if sl > 0:
+                    message += f"SL: <code>${sl:.4f}</code> • TP1: <code>${tp1:.4f}</code> • TP2: <code>${tp2:.4f}</code>\n"
+                
+                message += "\n"
+            
+            if len(positions) > 10:
+                message += f"<i>+{len(positions)-10} more positions</i>\n\n"
+            
+            message += (
+                f"<b>Account</b>\n"
+                f"Balance: <code>${account.get('balance', 0):.2f}</code>\n"
+                f"Equity: <code>${account.get('equity', 0):.2f}</code>\n"
+                f"Unrealized: <code>{account.get('unrealized_pnl', 0):+.2f}</code>"
+            )
+            
+            await update.message.reply_text(message, parse_mode="HTML")
+                
+        except Exception as e:
+            logger.error(f"Error in /scalp_v2_pos command: {e}")
+            await update.message.reply_text(f"⚠️ Lỗi: {e}")
+    
+    async def _handle_wyckoff_positions(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /wyckoff_pos command - Show Wyckoff open positions"""
+        chat_id = update.effective_chat.id
+        
+        if not self._is_authorized(chat_id):
+            await update.message.reply_text("❌ Unauthorized")
+            return
+        
+        try:
+            import json
+            import os
+            
+            # Read positions from wyckoff specific file
+            metrics_file = "logs/metrics_wyckoff_positions.json"
+            if not os.path.exists(metrics_file):
+                await update.message.reply_text(
+                    "📊 <b>Wyckoff Positions</b>\n\n"
+                    "No open positions",
+                    parse_mode="HTML"
+                )
+                return
+            
+            with open(metrics_file, "r") as f:
+                data = json.load(f)
+            
+            positions = data.get("positions", [])
+            account = data.get("account", {})
+            
+            if not positions:
+                await update.message.reply_text(
+                    "📊 <b>Wyckoff Positions</b>\n\n"
+                    "No open positions",
+                    parse_mode="HTML"
+                )
+                return
+            
+            # Build message
+            message = f"📊 <b>Wyckoff Open Positions</b> ({len(positions)})\n\n"
+            
+            for pos in positions[:10]:  # Limit to 10
+                symbol = pos.get("symbol", "N/A")
+                side = pos.get("side", "N/A")
+                entry_price = pos.get("entry_price", 0)
+                current_price = pos.get("current_price", entry_price)
+                quantity = pos.get("quantity", 0)
+                unrealized_pnl = pos.get("unrealized_pnl", 0)
+                
+                pnl_emoji = "🟢" if unrealized_pnl >= 0 else "🔴"
+                pnl_pct = (unrealized_pnl / (entry_price * quantity)) * 100 if (entry_price * quantity) > 0 else 0
+                
+                message += (
+                    f"{pnl_emoji} <b>{symbol}</b> {side}\n"
+                    f"Entry: <code>${entry_price:.4f}</code> • Now: <code>${current_price:.4f}</code>\n"
+                    f"Qty: {quantity:.6f} • P&L: <code>{unrealized_pnl:+.2f}</code> ({pnl_pct:+.2f}%)\n\n"
+                )
+            
+            if len(positions) > 10:
+                message += f"<i>+{len(positions)-10} more positions</i>\n\n"
+            
+            message += (
+                f"<b>Account</b>\n"
+                f"Balance: <code>${account.get('balance', 0):.2f}</code>\n"
+                f"Equity: <code>${account.get('equity', 0):.2f}</code>\n"
+                f"Unrealized: <code>{account.get('unrealized_pnl', 0):+.2f}</code>"
+            )
+            
+            await update.message.reply_text(message, parse_mode="HTML")
+                
+        except Exception as e:
+            logger.error(f"Error in /wyckoff_pos command: {e}")
+            await update.message.reply_text(f"⚠️ Lỗi: {e}")
+    
+    async def _handle_all_bots(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /all command - Show summary of all 3 bots"""
+        chat_id = update.effective_chat.id
+        
+        if not self._is_authorized(chat_id):
+            await update.message.reply_text("❌ Unauthorized")
+            return
+        
+        try:
+            import json
+            import os
+            
+            # Read all bot metrics
+            wyckoff_file = "logs/metrics_wyckoff.json"
+            scalp_file = "logs/metrics_scalp.json"
+            scalp_v2_file = "logs/metrics_scalp_v2.json"
+            
+            bots_data = []
+            
+            # Wyckoff
+            if os.path.exists(wyckoff_file):
+                with open(wyckoff_file, "r") as f:
+                    wyckoff_data = json.load(f)
+                    bots_data.append(("📊 Wyckoff", wyckoff_data))
+            
+            # Scalp V1
+            if os.path.exists(scalp_file):
+                with open(scalp_file, "r") as f:
+                    scalp_data = json.load(f)
+                    bots_data.append(("⚡ Scalp V1", scalp_data))
+            
+            # Scalp V2
+            if os.path.exists(scalp_v2_file):
+                with open(scalp_v2_file, "r") as f:
+                    scalp_v2_data = json.load(f)
+                    bots_data.append(("⚡ Scalp V2", scalp_v2_data))
+            
+            if not bots_data:
+                await update.message.reply_text(
+                    "⚠️ <b>All Bots Summary</b>\n\n"
+                    "No bot data available",
+                    parse_mode="HTML"
+                )
+                return
+            
+            # Build summary message
+            message = "🤖 <b>All Bots Summary</b>\n\n"
+            
+            total_equity = 0
+            total_pnl = 0
+            total_trades = 0
+            total_positions = 0
+            
+            for bot_name, data in bots_data:
+                account = data.get("account", {})
+                stats = data.get("stats", {})
+                
+                balance = account.get("balance", 0)
+                equity = account.get("equity", 0)
+                realized_pnl = account.get("realized_pnl", 0)
+                unrealized_pnl = account.get("unrealized_pnl", 0)
+                bot_total_pnl = realized_pnl + unrealized_pnl
+                
+                trades = stats.get("total_trades", 0)
+                winning = stats.get("winning_trades", 0)
+                losing = stats.get("losing_trades", 0)
+                win_rate = (winning / trades * 100) if trades > 0 else 0
+                open_pos = stats.get("open_positions", 0)
+                
+                # Accumulate totals
+                total_equity += equity
+                total_pnl += bot_total_pnl
+                total_trades += trades
+                total_positions += open_pos
+                
+                # Status emoji
+                status_emoji = "🟢" if equity > 5 else "🔴"
+                pnl_emoji = "🟢" if bot_total_pnl >= 0 else "🔴"
+                
+                message += (
+                    f"{bot_name} {status_emoji}\n"
+                    f"Equity: <code>${equity:.2f}</code> • "
+                    f"{pnl_emoji} P&L: <code>{bot_total_pnl:+.2f}</code>\n"
+                    f"Trades: {trades} ({winning}W/{losing}L • {win_rate:.0f}%) • "
+                    f"Open: {open_pos}\n\n"
+                )
+            
+            # Overall summary
+            total_pnl_emoji = "🟢" if total_pnl >= 0 else "🔴"
+            total_return = (total_pnl / 300) * 100  # 3 bots × $100
+            
+            message += (
+                f"<b>Portfolio Total</b>\n"
+                f"Total Equity: <code>${total_equity:.2f}</code>\n"
+                f"{total_pnl_emoji} Total P&L: <code>{total_pnl:+.2f}</code> ({total_return:+.2f}%)\n"
+                f"Total Trades: {total_trades}\n"
+                f"Open Positions: {total_positions}\n\n"
+                f"<i>Initial: $300 (3 × $100)</i>"
+            )
+            
+            await update.message.reply_text(message, parse_mode="HTML")
+                
+        except Exception as e:
+            logger.error(f"Error in /all command: {e}")
             await update.message.reply_text(f"⚠️ Lỗi: {e}")
     
     async def _handle_help(
@@ -626,19 +1086,26 @@ class TelegramBot:
         
         message = (
             "🤖 <b>Command Guide</b>\n\n"
-            "<b>Trading Commands</b>\n"
-            "/status • System health & uptime\n"
-            "/positions • Open positions with P&L\n"
-            "/pnl • Performance metrics\n"
-            "/scalp • Scalping strategy stats\n"
-            "/wyckoff • Main strategy stats\n\n"
-            "<b>Notifications</b>\n"
-            "You receive alerts when:\n"
-            "• Position opened\n"
-            "• Position closed (with P&L)\n\n"
-            "<b>Strategies</b>\n"
-            "⚡ Scalping: 1m ultra-fast trades\n"
-            "📊 Wyckoff: 5m-1h trend following\n\n"
+            "<b>Bot Reports</b>\n"
+            "/all • Báo cáo tổng hợp cả 3 bot\n"
+            "/wyckoff • Wyckoff strategy report\n"
+            "/wyckoff_pos • Wyckoff open positions\n"
+            "/scalp • Scalping V1 report\n"
+            "/scalp_pos • Scalp V1 open positions\n"
+            "/scalp_v2 • Scalping V2 report\n"
+            "/scalp_v2_pos • Scalp V2 open positions\n"
+            "/status • System health\n\n"
+            "<b>Position Details</b>\n"
+            "Each position shows:\n"
+            "• Entry & Current price\n"
+            "• Quantity & P&L\n"
+            "• SL/TP targets (Scalp V2)\n\n"
+            "<b>3 Independent Bots</b>\n"
+            "💰 Wyckoff: $100 wallet\n"
+            "⚡ Scalp V1: $100 wallet\n"
+            "⚡ Scalp V2: $100 wallet\n\n"
+            "<b>Auto-Reset</b>\n"
+            "If equity < $5: Auto-reset to $100\n\n"
             "💡 Paper trading • Real-time data"
         )
         

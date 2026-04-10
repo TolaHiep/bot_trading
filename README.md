@@ -1,291 +1,276 @@
 # 🤖 Quantitative Trading Bot
 
-Bot trading tự động sử dụng chiến lược Wyckoff và Scalping, tích hợp với Bybit API.
+Multi-strategy cryptocurrency trading bot với 3 bots độc lập chạy song song.
 
-## ✨ Tính Năng
+## 🌟 Tính năng
 
-- **Dual Strategy System**
-  - 🎯 **Wyckoff (Main)**: Chiến lược xu hướng chính (5m-1h timeframes)
-  - ⚡ **Scalping**: Trade siêu tốc 1m với RSI, VWAP, Bollinger Bands
+### 3 Bots Độc Lập
+- **Wyckoff Bot** (Main): Phân tích Wyckoff, multi-symbol, $100 wallet
+- **Scalping V1**: Scalping cơ bản, 1m timeframe, $100 wallet  
+- **Scalping V2**: Scalping nâng cao với ATR-based SL/TP, $100 wallet
 
-- **Multi-Symbol Trading**
-  - Tự động scan 50-100 symbols từ Bybit
-  - Capital allocation thông minh (5% per position, 80% max exposure)
-  - Quản lý tối đa 16 positions đồng thời
+### Chiến lược Trading
+- ✅ Wyckoff accumulation/distribution detection
+- ✅ Multi-timeframe analysis (5m, 15m, 1h)
+- ✅ Order flow analysis
+- ✅ Support/Resistance detection
+- ✅ RSI, EMA, Bollinger Bands
+- ✅ Volume profile analysis
 
-- **Execution-Based Notifications**
-  - Chỉ thông báo khi VÀO/ĐÓNG lệnh thực tế
-  - Không spam tín hiệu phát hiện
-  - Format đẹp với Telegram bot
+### Risk Management
+- ✅ Cross margin (unrealized PnL dùng làm margin)
+- ✅ ATR-based stop loss
+- ✅ Multiple take profit targets
+- ✅ Breakeven logic
+- ✅ Trailing stop
+- ✅ Auto-reset khi liquidation
 
-- **Paper Trading**
-  - Mô phỏng giao dịch với dữ liệu real-time
-  - Không rủi ro tài chính
-  - Slippage và commission realistic
+### Monitoring & Alerts
+- ✅ Telegram bot với commands
+- ✅ Real-time dashboard (Streamlit)
+- ✅ Liquidation reports
+- ✅ Performance metrics
+- ✅ Position tracking
 
-## 🐳 Quick Start
+## 🚀 Quick Start
 
-### Bước 1: Cấu Hình
+### Cài đặt nhanh (5 phút)
 
 ```bash
-# Copy .env template
-copy .env.example .env
+# 1. Chạy setup
+setup.bat
 
-# Edit credentials
+# 2. Điền API keys vào .env
 notepad .env
+
+# 3. Khởi động bot
+start.bat
 ```
 
-Điền:
-```env
-BYBIT_API_KEY=your_api_key
-BYBIT_API_SECRET=your_api_secret
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_IDS=your_chat_id
-```
+📖 **Chi tiết**: Xem [QUICK_START.md](QUICK_START.md)
 
-### Bước 2: Chạy Docker
-
-```bash
-docker-compose up -d
-```
-
-### Bước 3: Kiểm Tra
-
-```bash
-# Check logs
-docker-compose logs -f trading_bot
-
-# Check status
-docker-compose ps
-```
-
-### Bước 4: Test Telegram
-
-Mở Telegram, gửi:
-```
-/start
-/status
-/positions
-```
-
-## 📊 Services
-
-Khi chạy `docker-compose up -d`, các services sau sẽ tự động khởi động:
-
-| Service | Port | Mô Tả |
-|---------|------|-------|
-| **trading_bot** | - | Main trading bot |
-| **telegram_bot** | - | Telegram alerts & commands |
-| **dashboard** | 8501 | Streamlit monitoring UI |
-| **timescaledb** | 5432 | TimescaleDB database |
-
-## 📱 Telegram Bot Commands
+## 📊 Telegram Commands
 
 ```
-/status    - Dashboard sức khỏe bot
-/positions - Lệnh đang Hold hiện tại
-/pnl       - Quản lý tài chính tổng quát
-/scalp     - Thống kê bot Scalping
-/wyckoff   - Thống kê bot Wyckoff (Main)
-/help      - Hướng dẫn sử dụng
+/all          - Báo cáo tổng hợp cả 3 bot
+/wyckoff      - Báo cáo bot Wyckoff
+/scalp        - Báo cáo bot Scalping V1
+/scalp_v2     - Báo cáo bot Scalping V2
+/status       - Trạng thái hệ thống
 ```
 
-## 🌐 Dashboard
+## 🏗️ Kiến trúc
 
-Truy cập: http://localhost:8501
+```
+┌─────────────────────────────────────────┐
+│         Trading Bot System              │
+├─────────────────────────────────────────┤
+│                                         │
+│  ┌──────────┐  ┌──────────┐  ┌────────┐│
+│  │ Wyckoff  │  │ Scalp V1 │  │Scalp V2││
+│  │  $100    │  │  $100    │  │ $100   ││
+│  └────┬─────┘  └────┬─────┘  └───┬────┘│
+│       │             │             │     │
+│       └─────────────┴─────────────┘     │
+│                     │                   │
+│              ┌──────▼──────┐            │
+│              │  Bybit API  │            │
+│              │  (Mainnet)  │            │
+│              └──────┬──────┘            │
+│                     │                   │
+│       ┌─────────────┴─────────────┐     │
+│       │                           │     │
+│  ┌────▼─────┐              ┌──────▼───┐│
+│  │ Telegram │              │Dashboard ││
+│  │   Bot    │              │(Streamlit││
+│  └──────────┘              └──────────┘│
+│                                         │
+└─────────────────────────────────────────┘
+```
 
-## ⚙️ Cấu Hình
+## 📁 Cấu trúc Project
 
-### Trading Config
+```
+Trading_bot/
+├── src/
+│   ├── alpha/              # Trading strategies
+│   │   ├── wyckoff.py
+│   │   ├── scalping_engine.py
+│   │   └── scalping_engine_v2.py
+│   ├── core/               # Core trading loops
+│   │   ├── trading_loop.py
+│   │   ├── scalping_loop.py
+│   │   ├── scalping_loop_v2.py
+│   │   └── multi_bot_manager.py
+│   ├── execution/          # Order execution
+│   │   ├── paper_trader.py
+│   │   └── order_manager.py
+│   ├── monitoring/         # Monitoring & alerts
+│   │   ├── telegram_bot.py
+│   │   └── account_monitor.py
+│   └── risk/               # Risk management
+│       ├── stop_loss.py
+│       └── position_sizing.py
+├── config/
+│   └── config.yaml         # Bot configuration
+├── docs/                   # Documentation
+├── tests/                  # Unit & property tests
+├── docker-compose.yml      # Docker setup
+├── setup.bat              # Setup script
+├── start.bat              # Start bot
+└── .env                   # API keys (create this)
+```
 
-File: `config/config.yaml`
+## ⚙️ Cấu hình
+
+### config.yaml
 
 ```yaml
+# Symbol
 symbol: BTCUSDT
-initial_balance: 100
 
+# Multi-symbol trading
 multi_symbol:
   enabled: true
-  volume_threshold: 10000000
+  max_symbols: 10
 
+# Risk management
+risk:
+  risk_per_trade: 0.02      # 2% per trade
+  max_positions: 3
+  max_drawdown_pct: 0.15    # 15% max drawdown
+
+# Scalping settings
 scalping:
   enabled: true
-  risk_per_trade: 0.01
+  risk:
+    leverage: 20.0          # 20x leverage
+    risk_per_trade: 0.05    # 5% per trade
 ```
 
-### Chọn Strategy
+### .env
 
-Edit `config/config.yaml`:
+```env
+# Bybit API
+BYBIT_API_KEY=your_key
+BYBIT_API_SECRET=your_secret
 
-```yaml
-# Bật/tắt Multi-Symbol
-multi_symbol:
-  enabled: true  # true/false
+# Telegram
+TELEGRAM_BOT_TOKEN=your_token
+TELEGRAM_CHAT_IDS=your_chat_id
 
-# Bật/tắt Scalping
-scalping:
-  enabled: true  # true/false
+# Database
+POSTGRES_PASSWORD=secure_password
 ```
 
-Sau đó restart:
-```bash
-docker-compose restart trading_bot
-```
-
-## 🔧 Quản Lý
-
-### Xem Logs
+## 🧪 Testing
 
 ```bash
-# All services
-docker-compose logs -f
+# Unit tests
+pytest tests/unit/
 
-# Specific service
-docker-compose logs -f trading_bot
-docker-compose logs -f telegram_bot
+# Property-based tests
+pytest tests/property/
+
+# All tests
+pytest
 ```
 
-### Restart
+## 📈 Performance Metrics
 
-```bash
-# All services
-docker-compose restart
+Bot tự động track:
+- Total P&L (realized + unrealized)
+- Win rate
+- Average win/loss
+- Max drawdown
+- Sharpe ratio
+- Trade frequency
 
-# Specific service
-docker-compose restart trading_bot
-```
+Metrics được lưu tại:
+- `logs/metrics_wyckoff.json`
+- `logs/metrics_scalp.json`
+- `logs/metrics_scalp_v2.json`
 
-### Stop
+## 🔒 Bảo mật
 
-```bash
-docker-compose down
-```
-
-### Rebuild (sau khi sửa code)
-
-```bash
-docker-compose down
-docker-compose build --no-cache
-docker-compose up -d
-```
-
-## 📊 Notification System
-
-**Execution-Based Alerts:**
-
-✅ **Vào Lệnh**
-```
-🟢 OPENED BUY • SCALP
-BTCUSDT × 0.010000
-Entry: $50,010.00
-Size: $500.10
-```
-
-🏁 **Đóng Lệnh**
-```
-🟢 CLOSED BUY • MAIN
-ETHUSDT × 0.500000
-Exit: $3,850.25 • Take Profit
-P&L: +15.50 USDT (+3.10%)
-```
-
-## 🏗️ Kiến Trúc
-
-```
-src/
-├── alpha/           # Signal generators (Wyckoff, Scalping)
-├── connectors/      # Bybit WebSocket & REST API
-├── core/            # Trading loops & multi-symbol manager
-├── execution/       # Paper trader & order management
-├── risk/            # Position sizing & risk management
-└── monitoring/      # Telegram bot & metrics
-```
-
-## 📈 Performance Tracking
-
-Metrics được export vào `logs/metrics.json`:
-
-```json
-{
-  "strategies": {
-    "scalp": {
-      "total_trades": 5,
-      "win_rate": 60.0,
-      "realized_pnl": 12.50
-    },
-    "main": {
-      "total_trades": 10,
-      "win_rate": 70.0,
-      "realized_pnl": 45.80
-    }
-  }
-}
-```
-
-## 🛠️ Tech Stack
-
-- **Python 3.11+**
-- **Docker & Docker Compose**
-- **Bybit API v5** (WebSocket & REST)
-- **TimescaleDB** (Time-series database)
-- **python-telegram-bot** (Notifications)
-- **Streamlit** (Dashboard)
-- **pandas & numpy** (Data processing)
-
-## ⚠️ Important Notes
-
-- Bot runs in **Paper Trading** mode (simulated with real market data)
-- Uses **real Bybit API** for market data
-- **No real money at risk** - all trades are simulated
-- Data is real-time from Bybit Mainnet
-
-## 🆘 Troubleshooting
-
-### Docker không chạy
-
-```bash
-# Check Docker Desktop
-docker --version
-docker ps
-```
-
-### Service lỗi
-
-```bash
-# Check logs
-docker-compose logs trading_bot
-
-# Restart
-docker-compose restart trading_bot
-```
-
-### Telegram bot không phản hồi
-
-1. Check TELEGRAM_BOT_TOKEN trong .env
-2. Check TELEGRAM_CHAT_IDS trong .env
-3. Gửi /start cho bot
-4. Restart: `docker-compose restart telegram_bot`
-
-### Database connection error
-
-```bash
-# Check database
-docker-compose logs timescaledb
-
-# Restart database
-docker-compose restart timescaledb
-```
+- ✅ Paper trading mặc định (an toàn)
+- ✅ API keys trong .env (không commit)
+- ✅ IP whitelist khuyến nghị
+- ✅ Read-only API cho monitoring
+- ⚠️ KHÔNG bật live trading nếu chưa hiểu rõ
 
 ## 📚 Documentation
 
-- [START_HERE_DOCKER.md](START_HERE_DOCKER.md) - Quick start guide
-- [docker-compose.yml](docker-compose.yml) - Services configuration
-- [Dockerfile](Dockerfile) - Image build configuration
+- [QUICK_START.md](QUICK_START.md) - Hướng dẫn cài đặt nhanh
+- [START_HERE_DOCKER.md](START_HERE_DOCKER.md) - Docker setup chi tiết
+- [docs/LIQUIDATION_HANDLING.md](docs/LIQUIDATION_HANDLING.md) - Xử lý liquidation
+- [docs/SCALPING_STRATEGY.md](docs/SCALPING_STRATEGY.md) - Chiến lược scalping
 
-## 📄 License
+## 🛠️ Tech Stack
 
-MIT License - Xem [LICENSE](LICENSE) để biết thêm chi tiết.
+- **Language**: Python 3.11
+- **Exchange**: Bybit (mainnet)
+- **Database**: TimescaleDB (PostgreSQL)
+- **Dashboard**: Streamlit
+- **Alerts**: Telegram Bot
+- **Deployment**: Docker Compose
+
+## 📊 Dashboard
+
+Mở http://localhost:8501 để xem:
+- Real-time price charts
+- Portfolio performance
+- Open positions
+- P&L charts
+- Trade history
+
+## 🐛 Troubleshooting
+
+### Bot không khởi động
+```bash
+docker logs trading_bot_app
+```
+
+### Telegram không hoạt động
+```bash
+docker logs trading_bot_telegram
+```
+
+### Reset database
+```bash
+docker-compose down -v
+docker-compose up -d
+```
+
+## 🤝 Contributing
+
+1. Fork the repo
+2. Create feature branch (`git checkout -b feature/amazing`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing`)
+5. Open Pull Request
+
+## ⚠️ Disclaimer
+
+- Bot này chỉ dùng cho mục đích học tập và nghiên cứu
+- Paper trading (mô phỏng) là mặc định và được khuyến nghị
+- Live trading có rủi ro cao, có thể mất tiền
+- Tác giả không chịu trách nhiệm về bất kỳ tổn thất nào
+- Luôn test kỹ trước khi dùng tiền thật
+- Không phải lời khuyên tài chính
+
+## 📝 License
+
+MIT License - Xem [LICENSE](LICENSE) để biết thêm chi tiết
+
+## 📞 Support
+
+- 📧 Email: support@example.com
+- 💬 Telegram: @your_support_channel
+- 🐛 Issues: GitHub Issues
 
 ---
 
-**Happy Trading! 🚀**
+**Made with ❤️ for the crypto trading community**
+
+🚀 Happy Trading! 📈

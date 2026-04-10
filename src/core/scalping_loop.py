@@ -278,13 +278,8 @@ class ScalpingLoop:
     async def _execute_signal(self, symbol: str, trading_signal) -> None:
         """Execute scalping signal - Notification handled by PaperTrader"""
         try:
-            # Check Kill Switch FIRST
-            if self.paper_trader.kill_switch and self.paper_trader.kill_switch.is_active():
-                logger.error(
-                    f"🚨 KILL SWITCH ACTIVE! Scalping disabled for {symbol}. "
-                    f"Reason: {self.paper_trader.kill_switch.get_status()['reason']}"
-                )
-                return
+            # Kill switch disabled for scalping - only check paper trader's kill switch
+            # (which is only for Wyckoff bot)
             
             logger.info(f"\n[SCALP] SIGNAL DETECTED for {symbol}: {trading_signal.signal_type.value}")
 
