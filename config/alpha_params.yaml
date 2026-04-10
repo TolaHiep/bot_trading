@@ -3,7 +3,7 @@
 
 signal_generation:
   # Confidence thresholds
-  min_confidence: 60  # Suppress signals below this confidence
+  min_confidence: 40  # Minimum confidence for signal generation (lowered from 60)
   max_confidence: 100
   
   # Multi-timeframe alignment
@@ -11,19 +11,19 @@ signal_generation:
     - "1m"
     - "5m"
     - "15m"
-  min_timeframe_alignment: 2  # Minimum number of timeframes that must agree
+  min_timeframe_alignment: 1  # Require at least 1 timeframe (lowered from 2)
   
   # Volume confirmation
-  volume_multiplier: 1.5  # Volume must be > 1.5x average for breakout confirmation
+  volume_multiplier: 1.2  # Volume must be 1.2x average (lowered from 1.5x)
   volume_lookback: 20  # Number of bars for average volume calculation
   
   # Wyckoff phase weights
   wyckoff_weights:
-    ACCUMULATION: 0.0  # No signals in accumulation
+    ACCUMULATION: 0.5  # Allow signals during accumulation with reduced weight
     MARKUP: 1.0  # Full weight for buy signals
-    DISTRIBUTION: 0.0  # No signals in distribution
+    DISTRIBUTION: 0.5  # Allow signals during distribution with reduced weight
     MARKDOWN: 1.0  # Full weight for sell signals
-    UNKNOWN: 0.0  # No signals when phase unknown
+    UNKNOWN: 0.3  # Allow weak signals when phase unknown
   
   # Order flow delta thresholds
   delta_threshold: 0  # Delta must be > 0 for BUY, < 0 for SELL
@@ -40,7 +40,7 @@ signal_generation:
 
 breakout_filter:
   # False breakout detection
-  min_volume_ratio: 1.5  # Minimum volume ratio for valid breakout
+  min_volume_ratio: 1.5  # Volume must be 1.5x average for breakout
   min_price_move: 0.005  # Minimum 0.5% price move for breakout
   
   # Support/resistance levels
@@ -48,7 +48,7 @@ breakout_filter:
   level_tolerance: 0.002  # 0.2% tolerance for level matching
   
   # Breakout confirmation
-  confirmation_bars: 2  # Number of bars to confirm breakout
+  confirmation_bars: 2  # Require 2 bars to confirm breakout
   retest_allowed: true  # Allow retest of broken level
   retest_tolerance: 0.003  # 0.3% tolerance for retest
   

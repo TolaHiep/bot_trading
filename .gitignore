@@ -35,6 +35,8 @@ wheels/
 *.swo
 *.swn
 .kiro/
+.agent/
+GEMINI.md
 
 # Testing
 .pytest_cache/

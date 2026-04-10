@@ -588,3 +588,27 @@ class StopLossEngine:
             Dictionary of positions
         """
         return self.positions.copy()
+    
+    async def update_stops(self, current_price: float):
+        """Update all stop losses with current price
+        
+        Args:
+            current_price: Current market price
+        """
+        for symbol in list(self.positions.keys()):
+            await self.update_position(symbol, current_price)
+    
+    def check_stop_triggered(self, symbol: str, current_price: float) -> bool:
+        """Check if stop loss was triggered (alias for check_stop_loss_triggered)
+        
+        Args:
+            symbol: Trading symbol
+            current_price: Current price
+            
+        Returns:
+            True if stop loss triggered
+        """
+        if symbol in self.positions:
+            self.positions[symbol].current_price = current_price
+        
+        return asyncio.run(self.check_stop_loss_triggered(symbol))

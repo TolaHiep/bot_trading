@@ -89,7 +89,7 @@ class CostFilter:
         self,
         max_slippage_pct: Decimal = Decimal("0.1"),
         max_total_cost_pct: Decimal = Decimal("0.2"),
-        max_spread_pct: Decimal = Decimal("0.05"),
+        max_spread_pct: Decimal = Decimal("0.5"),  # 0.5% for scalping (increased from 0.05%)
         commission_rate: Decimal = Decimal("0.06")  # 0.06% Bybit taker fee
     ):
         """

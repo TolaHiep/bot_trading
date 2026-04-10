@@ -48,7 +48,8 @@ class BreakoutFilter:
         min_price_move: float = 0.005,
         level_lookback: int = 50,
         level_tolerance: float = 0.002,
-        confirmation_bars: int = 2
+        confirmation_bars: int = 2,
+        max_history: int = 100
     ):
         """Initialize breakout filter
         
@@ -60,21 +61,24 @@ class BreakoutFilter:
             level_lookback: Lookback period for S/R levels
             level_tolerance: Tolerance for level matching
             confirmation_bars: Bars needed to confirm breakout
+            max_history: Maximum bars to keep in history (circular buffer limit)
         """
         self.symbol = symbol
         self.timeframe = timeframe
         self.min_volume_ratio = min_volume_ratio
         self.min_price_move = min_price_move
-        self.level_lookback = level_lookback
+        # Limit lookback to max_history for memory optimization
+        self.level_lookback = min(level_lookback, max_history)
         self.level_tolerance = level_tolerance
         self.confirmation_bars = confirmation_bars
+        self.max_history = max_history
         
-        # Price and volume history
-        self.highs: Deque[float] = deque(maxlen=level_lookback)
-        self.lows: Deque[float] = deque(maxlen=level_lookback)
-        self.closes: Deque[float] = deque(maxlen=level_lookback)
-        self.volumes: Deque[float] = deque(maxlen=level_lookback)
-        self.timestamps: Deque[int] = deque(maxlen=level_lookback)
+        # Price and volume history (circular buffers with strict limits)
+        self.highs: Deque[float] = deque(maxlen=self.max_history)
+        self.lows: Deque[float] = deque(maxlen=self.max_history)
+        self.closes: Deque[float] = deque(maxlen=self.max_history)
+        self.volumes: Deque[float] = deque(maxlen=self.max_history)
+        self.timestamps: Deque[int] = deque(maxlen=self.max_history)
         
         # Support/resistance levels
         self.support_levels: List[SupportResistanceLevel] = []
@@ -150,9 +154,9 @@ class BreakoutFilter:
         if len(self.highs) < self.level_lookback:
             return
         
-        # Find swing highs and lows
-        highs_array = np.array(list(self.highs))
-        lows_array = np.array(list(self.lows))
+        # Find swing highs and lows with float32 for memory optimization
+        highs_array = np.array(list(self.highs), dtype=np.float32)
+        lows_array = np.array(list(self.lows), dtype=np.float32)
         
         # Identify resistance levels (swing highs)
         self.resistance_levels = self._find_levels(
@@ -181,6 +185,9 @@ class BreakoutFilter:
             List of SupportResistanceLevel objects
         """
         levels = []
+        
+        # Convert to float32 for memory optimization
+        prices = prices.astype(np.float32)
         
         # Find local extrema
         if level_type == 'RESISTANCE':
@@ -220,7 +227,7 @@ class BreakoutFilter:
             if not found_level:
                 # Create new level
                 levels.append(SupportResistanceLevel(
-                    price=price,
+                    price=float(price),
                     level_type=level_type,
                     touches=1,
                     first_touch=extrema_indices[i],

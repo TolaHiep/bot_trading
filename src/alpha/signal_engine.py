@@ -3,6 +3,7 @@
 This module aggregates indicators, order flow, and Wyckoff analysis to generate trading signals.
 """
 
+import gc
 import logging
 from dataclasses import dataclass
 from enum import Enum
@@ -76,28 +77,38 @@ class SignalGenerator:
         self.signal_config = self.config['signal_generation']
         self.breakout_config = self.config['breakout_filter']
         
-        # Initialize components
+        # Initialize components with memory optimization limits
         self.indicator_engine = IndicatorEngine()
         self.wyckoff_engine = WyckoffEngine()
         self.order_flow_analyzers: Dict[str, OrderFlowAnalyzer] = {}
         self.breakout_filters: Dict[str, BreakoutFilter] = {}
         
-        # Initialize for each timeframe
+        # Initialize for each timeframe with circular buffer limits
         for tf in self.signal_config['timeframes']:
+            # Order flow limited to 1000 trades
             self.order_flow_analyzers[tf] = OrderFlowAnalyzer(
                 symbol=symbol,
-                timeframe=tf
+                timeframe=tf,
+                window_size=1000  # Explicit limit for memory optimization
             )
+            # Breakout filter limited to 100 bars
             self.breakout_filters[tf] = BreakoutFilter(
                 symbol=symbol,
                 timeframe=tf,
                 min_volume_ratio=self.breakout_config['min_volume_ratio'],
                 min_price_move=self.breakout_config['min_price_move'],
-                level_lookback=self.breakout_config['level_lookback']
+                level_lookback=self.breakout_config['level_lookback'],
+                max_history=100  # Explicit limit for memory optimization
             )
         
-        # Signal history
+        # Signal history (limited to prevent memory bloat)
         self.signals: List[TradingSignal] = []
+        self.max_signal_history = 1000  # Keep last 1000 signals
+        
+        logger.info(
+            f"Initialized SignalGenerator for {symbol} with memory optimization: "
+            f"indicators=200 bars, order_flow=1000 trades, breakout=100 bars"
+        )
         
     def add_kline(
         self,
@@ -277,6 +288,10 @@ class SignalGenerator:
         
         self.signals.append(signal)
         
+        # Limit signal history to prevent memory bloat
+        if len(self.signals) > self.max_signal_history:
+            self.signals = self.signals[-self.max_signal_history:]
+        
         return signal if not signal.suppressed else None
     
     def _check_timeframe_alignment(self) -> Dict[str, bool]:
@@ -379,21 +394,28 @@ class SignalGenerator:
             Tuple of (SignalType, confidence, reason)
         """
         weights = self.signal_config['indicator_weights']
+        wyckoff_weights = self.signal_config['wyckoff_weights']
         min_alignment = self.signal_config['min_timeframe_alignment']
         min_volume = self.signal_config['volume_multiplier']
         
+        # Get Wyckoff phase weight
+        phase_weight = wyckoff_weights.get(wyckoff_phase.value, 0.0)
+        
+        # If phase weight is 0, no signals
+        if phase_weight == 0.0:
+            return SignalType.NEUTRAL, 0.0, f"Wyckoff phase {wyckoff_phase.value} has 0 weight"
+        
         # Check BUY conditions
-        if (wyckoff_phase == WyckoffPhase.MARKUP and
-            delta > self.signal_config['delta_threshold'] and
+        # Allow BUY if: positive delta + breakout UP + volume confirmation
+        if (delta > self.signal_config['delta_threshold'] and
             breakout_direction == "UP" and
-            volume_ratio >= min_volume and
-            aligned_timeframes >= min_alignment):
+            volume_ratio >= min_volume):
             
             # Calculate confidence
             confidence = 0.0
             
-            # Wyckoff weight
-            confidence += weights['wyckoff'] * 100
+            # Wyckoff weight (scaled by phase weight)
+            confidence += weights['wyckoff'] * phase_weight * 100
             
             # Order flow weight
             confidence += weights['order_flow'] * min(delta / 1000, 1.0) * 100
@@ -409,30 +431,30 @@ class SignalGenerator:
             confidence += weights['momentum'] * momentum_score * 100
             
             # Multi-timeframe bonus
-            tf_bonus = (aligned_timeframes / len(self.signal_config['timeframes'])) * 10
-            confidence += tf_bonus
+            if aligned_timeframes >= min_alignment:
+                tf_bonus = (aligned_timeframes / len(self.signal_config['timeframes'])) * 10
+                confidence += tf_bonus
             
             confidence = min(100, confidence)
             
             reason = (
-                f"Wyckoff=MARKUP, delta={delta:.0f}, breakout=UP, "
+                f"Wyckoff={wyckoff_phase.value}(w={phase_weight}), delta={delta:.0f}, breakout=UP, "
                 f"volume={volume_ratio:.1f}x, aligned={aligned_timeframes}/{len(self.signal_config['timeframes'])}"
             )
             
             return SignalType.BUY, confidence, reason
         
         # Check SELL conditions
-        if (wyckoff_phase == WyckoffPhase.MARKDOWN and
-            delta < -self.signal_config['delta_threshold'] and
+        # Allow SELL if: negative delta + breakout DOWN + volume confirmation
+        if (delta < -self.signal_config['delta_threshold'] and
             breakout_direction == "DOWN" and
-            volume_ratio >= min_volume and
-            aligned_timeframes >= min_alignment):
+            volume_ratio >= min_volume):
             
             # Calculate confidence
             confidence = 0.0
             
-            # Wyckoff weight
-            confidence += weights['wyckoff'] * 100
+            # Wyckoff weight (scaled by phase weight)
+            confidence += weights['wyckoff'] * phase_weight * 100
             
             # Order flow weight
             confidence += weights['order_flow'] * min(abs(delta) / 1000, 1.0) * 100
@@ -448,13 +470,14 @@ class SignalGenerator:
             confidence += weights['momentum'] * (1.0 - momentum_score) * 100
             
             # Multi-timeframe bonus
-            tf_bonus = (aligned_timeframes / len(self.signal_config['timeframes'])) * 10
-            confidence += tf_bonus
+            if aligned_timeframes >= min_alignment:
+                tf_bonus = (aligned_timeframes / len(self.signal_config['timeframes'])) * 10
+                confidence += tf_bonus
             
             confidence = min(100, confidence)
             
             reason = (
-                f"Wyckoff=MARKDOWN, delta={delta:.0f}, breakout=DOWN, "
+                f"Wyckoff={wyckoff_phase.value}(w={phase_weight}), delta={delta:.0f}, breakout=DOWN, "
                 f"volume={volume_ratio:.1f}x, aligned={aligned_timeframes}/{len(self.signal_config['timeframes'])}"
             )
             
@@ -463,12 +486,14 @@ class SignalGenerator:
         # NEUTRAL signal
         reason = "Conditions not met for BUY or SELL"
         
-        if wyckoff_phase == WyckoffPhase.UNKNOWN:
-            reason = "Wyckoff phase UNKNOWN"
-        elif aligned_timeframes < min_alignment:
-            reason = f"Insufficient timeframe alignment: {aligned_timeframes}/{min_alignment}"
+        if phase_weight < 0.5:
+            reason = f"Wyckoff phase {wyckoff_phase.value} has low weight ({phase_weight})"
+        elif breakout_direction is None:
+            reason = "No breakout detected"
         elif volume_ratio < min_volume:
             reason = f"Insufficient volume: {volume_ratio:.1f}x < {min_volume}x"
+        elif abs(delta) <= self.signal_config['delta_threshold']:
+            reason = f"Weak order flow delta: {delta:.0f}"
         
         return SignalType.NEUTRAL, 0.0, reason
     
@@ -481,6 +506,17 @@ class SignalGenerator:
         if not self.signals:
             return None
         return self.signals[-1]
+    
+    def get_current_price(self) -> Optional[float]:
+        """Get current price from latest signal
+        
+        Returns:
+            Current price or None
+        """
+        latest_signal = self.get_latest_signal()
+        if latest_signal:
+            return latest_signal.price
+        return None
     
     def get_signals(
         self,
@@ -517,3 +553,30 @@ class SignalGenerator:
         for filter in self.breakout_filters.values():
             filter.reset()
         self.signals.clear()
+    
+    def cleanup(self) -> None:
+        """Cleanup resources and trigger garbage collection
+        
+        This method should be called when a SignalGenerator instance is no longer needed
+        to free up memory resources.
+        """
+        logger.info(f"Cleaning up SignalGenerator for {self.symbol}")
+        
+        # Clear all data structures
+        self.reset()
+        
+        # Clear component references
+        self.order_flow_analyzers.clear()
+        self.breakout_filters.clear()
+        
+        # Trigger garbage collection to free memory
+        gc.collect()
+        
+        logger.debug(f"SignalGenerator cleanup complete for {self.symbol}")
+    
+    def __del__(self):
+        """Destructor to ensure cleanup on deletion"""
+        try:
+            self.cleanup()
+        except Exception as e:
+            logger.error(f"Error during SignalGenerator cleanup: {e}")

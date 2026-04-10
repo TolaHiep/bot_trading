@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     make \
     libpq-dev \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -28,6 +29,7 @@ RUN mkdir -p logs reports
 
 # Set Python to run in unbuffered mode (better for Docker logs)
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
 
 # Default command (can be overridden in docker-compose)
 CMD ["tail", "-f", "/dev/null"]

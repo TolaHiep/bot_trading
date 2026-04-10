@@ -56,6 +56,7 @@ class Order:
     exchange_order_id: Optional[str] = None
     reject_reason: Optional[str] = None
     retry_count: int = 0
+    strategy_name: str = "main"
     
     def update_state(self, new_state: OrderState, reason: Optional[str] = None) -> None:
         """Update order state"""
@@ -93,6 +94,7 @@ class Position:
     quantity: Decimal
     opened_at: datetime = field(default_factory=datetime.now)
     pnl: Decimal = Decimal("0")
+    strategy_name: str = "main"
     
     def calculate_pnl(self, current_price: Decimal) -> Decimal:
         """Calculate unrealized P&L"""
@@ -172,7 +174,8 @@ class OrderManager:
             order_type=OrderType.LIMIT,
             quantity=quantity,
             price=limit_price,
-            state=OrderState.PENDING
+            state=OrderState.PENDING,
+            strategy_name="main"
         )
         
         self.pending_orders[order_id] = order
@@ -473,7 +476,8 @@ class OrderManager:
                 state=state,
                 filled_qty=filled_qty,
                 avg_fill_price=avg_price,
-                exchange_order_id=exchange_order_id
+                exchange_order_id=exchange_order_id,
+                strategy_name="main" # Assuming it fetches from exchange, strategy inference is not trivial here
             )
             
             return order
@@ -489,7 +493,8 @@ class OrderManager:
             symbol=order.symbol,
             side=order.side,
             entry_price=order.avg_fill_price,
-            quantity=order.filled_qty
+            quantity=order.filled_qty,
+            strategy_name=order.strategy_name
         )
         
         logger.info(

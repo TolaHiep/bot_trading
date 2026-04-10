@@ -1,7 +1,32 @@
 # Trading Configuration
-mode: testnet  # testnet | paper | live
 symbol: BTCUSDT
-timeframes: [1m, 5m, 15m, 1h]
+initial_balance: 100  # Starting balance in USDT
+
+# Multi-Symbol Configuration
+multi_symbol:
+  enabled: true  # Set to true to enable multi-symbol mode
+  volume_threshold: 10000000  # $10M USD minimum 24h volume
+  max_symbols: 100  # Maximum symbols to monitor
+  refresh_interval: 21600  # 6 hours (in seconds)
+  max_position_pct: 0.05  # 5% per position (configurable 2-5%)
+  max_total_exposure: 0.80  # 80% total exposure limit
+  filters:
+    max_spread_pct: 0.001  # 0.1% maximum spread
+    min_atr_multiplier: 1.0  # Minimum ATR multiplier for volatility
+    min_listing_age_hours: 48  # Minimum 48 hours since listing
+    blacklist: []  # List of symbols to exclude
+
+# Scalping Configuration
+scalping:
+  enabled: true
+  symbols: []  # Empty = use multi_symbol scanner results (79 coins)
+  rsi_period: 7
+  ema_periods: [9, 21, 200]
+  bb_params: [20, 2]
+  risk_per_trade: 0.05  # 5%
+  leverage: 20.0  # 20x
+  daily_stop_loss: 0.02 # 2%
+
 
 # Alpha Model Configuration
 alpha:
@@ -20,9 +45,9 @@ risk:
   max_risk_per_trade: 0.02  # 2%
   max_position_size: 0.10  # 10%
   initial_stop_loss_pct: 0.02  # 2%
-  breakeven_trigger_pct: 0.01  # 1%
-  trailing_stop_trigger_pct: 0.02  # 2%
-  trailing_stop_distance_pct: 0.01  # 1%
+  breakeven_profit_pct: 0.01  # 1%
+  trailing_activation_pct: 0.02  # 2%
+  trailing_distance_pct: 0.01  # 1%
   kill_switch_daily_dd: 0.05  # 5%
   kill_switch_consecutive_losses: 5
 

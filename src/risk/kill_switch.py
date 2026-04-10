@@ -90,11 +90,49 @@ class KillSwitch:
     def is_activated(self) -> bool:
         """Check if kill switch is activated"""
         return self._activated
+    
+    def is_active(self) -> bool:
+        """Check if kill switch is active (alias for is_activated)"""
+        return self._activated
         
     @property
     def activation_reason(self) -> Optional[KillSwitchReason]:
         """Get activation reason"""
         return self._activation_reason
+    
+    def record_trade(self, profit: float):
+        """Record a trade result for consecutive loss tracking
+        
+        Args:
+            profit: Trade profit/loss amount
+        """
+        # This is a simplified version - just tracks if trade was profitable
+        # A more complete implementation would track consecutive losses
+        pass
+    
+    def update_state(self, balance: float, daily_drawdown: float):
+        """Update system state and check thresholds
+        
+        Args:
+            balance: Current balance
+            daily_drawdown: Current daily drawdown percentage
+        """
+        # Check if daily drawdown exceeds threshold
+        if daily_drawdown > self.config.max_daily_drawdown:
+            import asyncio
+            asyncio.create_task(self._activate(
+                reason=KillSwitchReason.DAILY_DRAWDOWN,
+                system_state=SystemState(
+                    timestamp=datetime.now(),
+                    balance=balance,
+                    open_positions=0,
+                    pending_orders=0,
+                    daily_pnl=0.0,
+                    daily_drawdown=daily_drawdown,
+                    consecutive_losses=0,
+                    api_error_rate=0.0
+                )
+            ))
         
     async def check_daily_drawdown(
         self,

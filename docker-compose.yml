@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # TimescaleDB Database
   timescaledb:
@@ -32,7 +30,8 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://trading_user:trading_pass@timescaledb:5432/trading_db
+      - DATABASE_URL=postgresql://trading_user:trading_pass@timescaledb:5432/trading_bot
+      - TZ=Asia/Ho_Chi_Minh
     volumes:
       - ./src:/app/src
       - ./tests:/app/tests
@@ -46,7 +45,8 @@ services:
     restart: unless-stopped
     networks:
       - trading_network
-    command: tail -f /dev/null  # Keep container running for development
+    # Sử dụng main.py - tự động chọn mode từ config.yaml
+    command: python main.py
 
   # Telegram Bot Service
   telegram_bot:
@@ -57,7 +57,8 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://trading_user:trading_pass@timescaledb:5432/trading_db
+      - DATABASE_URL=postgresql://trading_user:trading_pass@timescaledb:5432/trading_bot
+      - TZ=Asia/Ho_Chi_Minh
     volumes:
       - ./src:/app/src
       - ./scripts:/app/scripts
@@ -80,7 +81,8 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://trading_user:trading_pass@timescaledb:5432/trading_db
+      - DATABASE_URL=postgresql://trading_user:trading_pass@timescaledb:5432/trading_bot
+      - TZ=Asia/Ho_Chi_Minh
     ports:
       - "8501:8501"
     volumes:

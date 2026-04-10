@@ -123,24 +123,27 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("status", self._handle_status))
         self.application.add_handler(CommandHandler("positions", self._handle_positions))
         self.application.add_handler(CommandHandler("pnl", self._handle_pnl))
-        self.application.add_handler(CommandHandler("start_trading", self._handle_start_trading))
-        self.application.add_handler(CommandHandler("stop_trading", self._handle_stop_trading))
+        self.application.add_handler(CommandHandler("scalp", self._handle_scalp))
+        self.application.add_handler(CommandHandler("wyckoff", self._handle_wyckoff))
         self.application.add_handler(CommandHandler("help", self._handle_help))
         
         # Start bot
         await self.application.initialize()
         await self.application.start()
         
+        # Clear old commands first (to remove any stale commands)
+        await self.application.bot.delete_my_commands()
+        
         # Set bot commands menu (for / autocomplete)
         from telegram import BotCommand
         commands = [
-            BotCommand("start", "Start bot and show welcome message"),
-            BotCommand("status", "System status and health"),
-            BotCommand("positions", "Open positions and unrealized P&L"),
-            BotCommand("pnl", "P&L summary and performance"),
-            BotCommand("start_trading", "Start paper trading bot"),
-            BotCommand("stop_trading", "Stop trading bot"),
-            BotCommand("help", "Show help message")
+            BotCommand("start", "Bắt đầu và xem hướng dẫn"),
+            BotCommand("status", "Dashboard sức khỏe bot"),
+            BotCommand("positions", "Lệnh đang Hold hiện tại"),
+            BotCommand("pnl", "Quản lý tài chính tổng quát"),
+            BotCommand("scalp", "Thống kê bot Scalping"),
+            BotCommand("wyckoff", "Thống kê bot Wyckoff (Main)"),
+            BotCommand("help", "Hướng dẫn sử dụng chi tiết")
         ]
         await self.application.bot.set_my_commands(commands)
         
@@ -178,14 +181,20 @@ class TelegramBot:
             return
         
         await update.message.reply_text(
-            "🤖 Trading Bot Active\n\n"
-            "Available commands:\n"
-            "/status - System status and health\n"
-            "/positions - Open positions\n"
-            "/pnl - P&L summary\n"
-            "/start_trading - Start paper trading\n"
-            "/stop_trading - Stop trading\n"
-            "/help - Show this help message"
+            "🤖 <b>Quantitative Trading Bot</b>\n\n"
+            "📊 <b>Commands</b>\n"
+            "/status • System health\n"
+            "/positions • Open positions\n"
+            "/pnl • Performance metrics\n"
+            "/scalp • Scalping stats\n"
+            "/wyckoff • Main strategy stats\n"
+            "/help • Command guide\n\n"
+            "⚡ <b>Execution-Based Alerts</b>\n"
+            "You'll receive notifications only when:\n"
+            "• Positions are opened\n"
+            "• Positions are closed\n\n"
+            "💡 Paper trading mode • Real-time data",
+            parse_mode="HTML"
         )
     
     async def _handle_status(
@@ -200,11 +209,85 @@ class TelegramBot:
             await update.message.reply_text("❌ Unauthorized")
             return
         
-        # Get system status
+        # Try to read from shared metrics file first
+        try:
+            import json
+            import os
+            from datetime import datetime
+            
+            metrics_file = "logs/metrics.json"
+            if os.path.exists(metrics_file):
+                with open(metrics_file, "r") as f:
+                    data = json.load(f)
+                
+                system = data.get("system", {})
+                trading = data.get("trading", {})
+                market = data.get("market", {})
+                multi_symbol = data.get("multi_symbol", {})
+                mode = data.get("mode", "single_symbol")
+                
+                # Check if data is recent (within last 60 seconds)
+                last_update = datetime.fromisoformat(data.get("timestamp"))
+                seconds_ago = (datetime.now() - last_update).total_seconds()
+                
+                if seconds_ago > 60:
+                    await update.message.reply_text(
+                        f"⚠️ <b>Bot Status</b>\n\n"
+                        f"Last update: {seconds_ago:.0f}s ago\n"
+                        f"Bot might be offline or restarting",
+                        parse_mode="HTML"
+                    )
+                    return
+                
+                # Format message
+                uptime_hours = system.get("uptime_seconds", 0) / 3600
+                
+                if mode == "multi_symbol":
+                    # Multi-symbol mode status
+                    monitored_symbols = multi_symbol.get("monitored_symbols", 0)
+                    active_symbols = multi_symbol.get("active_symbols", [])
+                    
+                    message = (
+                        f"📊 <b>System Status</b>\n\n"
+                        f"🟢 API • 🟢 DB\n"
+                        f"⏱ Uptime: {uptime_hours:.1f}h\n"
+                        f"🔄 Updated: {seconds_ago:.0f}s ago\n\n"
+                        f"<b>Multi-Symbol Trading</b>\n"
+                        f"Monitoring: {monitored_symbols} symbols\n"
+                        f"Balance: <code>${trading.get('current_balance', 0):.2f}</code>\n"
+                        f"Equity: <code>${trading.get('equity', 0):.2f}</code>\n"
+                        f"Open: {trading.get('open_positions', 0)} positions\n"
+                    )
+                    
+                    if active_symbols:
+                        symbols_preview = ", ".join(active_symbols[:5])
+                        if len(active_symbols) > 5:
+                            symbols_preview += f" +{len(active_symbols)-5}"
+                        message += f"\n<code>{symbols_preview}</code>"
+                else:
+                    # Single-symbol mode status
+                    message = (
+                        f"📊 <b>System Status</b>\n\n"
+                        f"🟢 API • 🟢 DB\n"
+                        f"⏱ Uptime: {uptime_hours:.1f}h\n"
+                        f"🔄 Updated: {seconds_ago:.0f}s ago\n\n"
+                        f"<b>Single-Symbol Trading</b>\n"
+                        f"Symbol: <b>{market.get('symbol', 'N/A')}</b>\n"
+                        f"Balance: <code>${trading.get('current_balance', 0):.2f}</code>\n"
+                        f"Equity: <code>${trading.get('equity', 0):.2f}</code>\n"
+                        f"Open: {trading.get('open_positions', 0)} positions\n"
+                    )
+                
+                await update.message.reply_text(message, parse_mode="HTML")
+                return
+        except Exception as e:
+            logger.error(f"Error reading metrics file: {e}")
+        
+        # Fallback to old method
         status = self.metrics_collector.get_system_status()
         
         if status.get("status") == "unknown":
-            await update.message.reply_text("⚠️ System status unknown")
+            await update.message.reply_text("⚠️ System status unknown - trading bot might not be running")
             return
         
         # Format message
@@ -241,7 +324,66 @@ class TelegramBot:
             await update.message.reply_text("❌ Unauthorized")
             return
         
-        # Get trading metrics
+        # Try to read from shared metrics file first
+        try:
+            import json
+            import os
+            
+            metrics_file = "logs/metrics.json"
+            if os.path.exists(metrics_file):
+                with open(metrics_file, "r") as f:
+                    data = json.load(f)
+                
+                trading = data.get("trading", {})
+                mode = data.get("mode", "single_symbol")
+                positions_data = data.get("positions", [])
+                
+                open_positions = trading.get('open_positions', 0)
+                
+                if open_positions == 0:
+                    await update.message.reply_text("📊 <b>Open Positions</b>\n\nNo positions open", parse_mode="HTML")
+                    return
+                
+                # Format message
+                message = (
+                    f"📊 <b>Open Positions</b> ({open_positions})\n"
+                    f"Unrealized: <code>{trading.get('unrealized_pnl', 0):+.2f} USDT</code>\n\n"
+                )
+                
+                # Show individual positions if available
+                if positions_data:
+                    for pos in positions_data[:10]:  # Limit to 10 positions
+                        symbol = pos.get('symbol', 'N/A')
+                        side = pos.get('side', 'N/A')
+                        quantity = pos.get('quantity', 0)
+                        entry_price = pos.get('entry_price', 0)
+                        current_price = pos.get('current_price', entry_price)
+                        unrealized_pnl = pos.get('unrealized_pnl', 0)
+                        
+                        pnl_emoji = "🟢" if unrealized_pnl >= 0 else "🔴"
+                        pnl_pct = (unrealized_pnl / (entry_price * quantity)) * 100 if (entry_price * quantity) > 0 else 0
+                        
+                        message += (
+                            f"{pnl_emoji} <b>{symbol}</b> {side} × {quantity:.6f}\n"
+                            f"Entry: <code>${entry_price:.2f}</code> • Now: <code>${current_price:.2f}</code>\n"
+                            f"P&L: <code>{unrealized_pnl:+.2f}</code> ({pnl_pct:+.2f}%)\n\n"
+                        )
+                    
+                    if len(positions_data) > 10:
+                        message += f"<i>+{len(positions_data)-10} more positions</i>\n\n"
+                
+                message += (
+                    f"<b>Account</b>\n"
+                    f"Balance: <code>${trading.get('current_balance', 0):.2f}</code>\n"
+                    f"Equity: <code>${trading.get('equity', 0):.2f}</code>"
+                )
+                
+                await update.message.reply_text(message, parse_mode="HTML")
+                return
+        except Exception as e:
+            logger.error(f"Error reading metrics file: {e}")
+        
+        # Fallback to old method
         metrics = self.metrics_collector.get_trading_summary()
         
         if metrics.get("status") == "no_data":
@@ -273,7 +415,47 @@ class TelegramBot:
             await update.message.reply_text("❌ Unauthorized")
             return
         
-        # Get trading metrics
+        # Try to read from shared metrics file first
+        try:
+            import json
+            import os
+            
+            metrics_file = "logs/metrics.json"
+            if os.path.exists(metrics_file):
+                with open(metrics_file, "r") as f:
+                    data = json.load(f)
+                
+                trading = data.get("trading", {})
+                
+                # Format message
+                total_pnl = trading.get('total_pnl', 0)
+                realized_pnl = trading.get('realized_pnl', 0)
+                unrealized_pnl = trading.get('unrealized_pnl', 0)
+                
+                total_pnl_emoji = "🟢" if total_pnl >= 0 else "🔴"
+                realized_pnl_emoji = "🟢" if realized_pnl >= 0 else "🔴"
+                unrealized_pnl_emoji = "🟢" if unrealized_pnl >= 0 else "🔴"
+                
+                total_return = (total_pnl / trading.get('initial_balance', 100)) * 100
+                
+                message = (
+                    f"💰 <b>Performance</b>\n\n"
+                    f"{total_pnl_emoji} Total: <code>{total_pnl:+.2f} USDT</code>\n"
+                    f"Realized: <code>{realized_pnl:+.2f}</code>\n"
+                    f"Unrealized: <code>{unrealized_pnl:+.2f}</code>\n\n"
+                    f"<b>Statistics</b>\n"
+                    f"Return: <code>{total_return:+.2f}%</code>\n"
+                    f"Win Rate: <code>{trading.get('win_rate', 0):.1f}%</code>\n"
+                    f"Trades: {trading.get('total_trades', 0)} "
+                    f"({trading.get('winning_trades', 0)}W/{trading.get('losing_trades', 0)}L)"
+                )
+                
+                await update.message.reply_text(message, parse_mode="HTML")
+                return
+        except Exception as e:
+            logger.error(f"Error reading metrics file: {e}")
+        
+        # Fallback to old method
         metrics = self.metrics_collector.get_trading_summary()
         
         if metrics.get("status") == "no_data":
@@ -299,6 +481,137 @@ class TelegramBot:
         
         await update.message.reply_text(message, parse_mode="Markdown")
     
+    async def _handle_scalp(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /scalp command - Show scalping bot statistics"""
+        chat_id = update.effective_chat.id
+        
+        if not self._is_authorized(chat_id):
+            await update.message.reply_text("❌ Unauthorized")
+            return
+        
+        try:
+            import json
+            import os
+            import yaml
+            
+            # Check if scalping is enabled
+            enabled = False
+            scalp_config = {}
+            if os.path.exists("config/config.yaml"):
+                with open("config/config.yaml", "r") as f:
+                    config = yaml.safe_load(f)
+                scalp_config = config.get("scalping", {})
+                enabled = scalp_config.get("enabled", False)
+            
+            if not enabled:
+                await update.message.reply_text(
+                    "⚡ <b>Scalping Strategy</b>\n\n"
+                    "Status: 🔴 Disabled\n"
+                    "<i>Enable in config.yaml</i>",
+                    parse_mode="HTML"
+                )
+                return
+            
+            # Read metrics from file
+            metrics_file = "logs/metrics.json"
+            if os.path.exists(metrics_file):
+                with open(metrics_file, "r") as f:
+                    data = json.load(f)
+                
+                strategies = data.get("strategies", {})
+                scalp_stats = strategies.get("scalp", {})
+                
+                total_trades = scalp_stats.get("total_trades", 0)
+                winning = scalp_stats.get("winning_trades", 0)
+                losing = scalp_stats.get("losing_trades", 0)
+                win_rate = scalp_stats.get("win_rate", 0)
+                realized_pnl = scalp_stats.get("realized_pnl", 0)
+                open_pos = scalp_stats.get("open_positions", 0)
+                
+                pnl_emoji = "🟢" if realized_pnl >= 0 else "🔴"
+                
+                bb_params = scalp_config.get('bb_params', [20, 2])
+                message = (
+                    f"⚡ <b>Scalping Strategy</b>\n\n"
+                    f"Status: 🟢 Active • 1m timeframe\n"
+                    f"Config: RSI({scalp_config.get('rsi_period', 7)}) • "
+                    f"BB({bb_params[0]},{bb_params[1]})\n"
+                    f"Risk: {scalp_config.get('risk_per_trade', 0.01)*100}%\n\n"
+                    f"<b>Performance</b>\n"
+                    f"Trades: {total_trades} ({winning}W/{losing}L)\n"
+                    f"Win Rate: <code>{win_rate:.1f}%</code>\n"
+                    f"{pnl_emoji} P&L: <code>{realized_pnl:+.2f} USDT</code>\n"
+                    f"Open: {open_pos} positions"
+                )
+                
+                await update.message.reply_text(message, parse_mode="HTML")
+            else:
+                await update.message.reply_text("⚠️ Không tìm thấy dữ liệu metrics")
+                
+        except Exception as e:
+            logger.error(f"Error in /scalp command: {e}")
+            await update.message.reply_text(f"⚠️ Lỗi: {e}")
+    
+    async def _handle_wyckoff(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /wyckoff command - Show main strategy (Wyckoff) statistics"""
+        chat_id = update.effective_chat.id
+        
+        if not self._is_authorized(chat_id):
+            await update.message.reply_text("❌ Unauthorized")
+            return
+        
+        try:
+            import json
+            import os
+            
+            # Read metrics from file
+            metrics_file = "logs/metrics.json"
+            if os.path.exists(metrics_file):
+                with open(metrics_file, "r") as f:
+                    data = json.load(f)
+                
+                strategies = data.get("strategies", {})
+                main_stats = strategies.get("main", {})
+                
+                total_trades = main_stats.get("total_trades", 0)
+                winning = main_stats.get("winning_trades", 0)
+                losing = main_stats.get("losing_trades", 0)
+                win_rate = main_stats.get("win_rate", 0)
+                realized_pnl = main_stats.get("realized_pnl", 0)
+                open_pos = main_stats.get("open_positions", 0)
+                
+                pnl_emoji = "🟢" if realized_pnl >= 0 else "🔴"
+                
+                mode = data.get("mode", "single_symbol")
+                mode_text = "Multi-Symbol" if mode == "multi_symbol" else "Single-Symbol"
+                
+                message = (
+                    f"📊 <b>Wyckoff Strategy</b> (Main)\n\n"
+                    f"Status: 🟢 Active • {mode_text}\n"
+                    f"Timeframes: 5m, 15m, 1h\n\n"
+                    f"<b>Performance (All Symbols)</b>\n"
+                    f"Trades: {total_trades} ({winning}W/{losing}L)\n"
+                    f"Win Rate: <code>{win_rate:.1f}%</code>\n"
+                    f"{pnl_emoji} P&L: <code>{realized_pnl:+.2f} USDT</code>\n"
+                    f"Open: {open_pos} positions"
+                )
+                
+                await update.message.reply_text(message, parse_mode="HTML")
+            else:
+                await update.message.reply_text("⚠️ Không tìm thấy dữ liệu metrics")
+                
+        except Exception as e:
+            logger.error(f"Error in /wyckoff command: {e}")
+            await update.message.reply_text(f"⚠️ Lỗi: {e}")
+    
     async def _handle_help(
         self,
         update: Update,
@@ -312,128 +625,24 @@ class TelegramBot:
             return
         
         message = (
-            "🤖 *Trading Bot Commands*\n\n"
-            "/status - System status and connection health\n"
-            "/positions - Open positions and unrealized P&L\n"
-            "/pnl - Daily, weekly, and total P&L\n"
-            "/start_trading - Start paper trading bot\n"
-            "/stop_trading - Stop trading bot\n"
-            "/help - Show this help message\n\n"
-            "📢 *Alerts*\n"
-            "You will receive alerts for:\n"
-            "• Order pending\n"
-            "• Order filled\n"
-            "• Order cancelled\n"
-            "• Order rejected\n"
-            "• Kill switch activation\n\n"
-            "⚠️ Alerts are rate-limited to 10 per hour"
+            "🤖 <b>Command Guide</b>\n\n"
+            "<b>Trading Commands</b>\n"
+            "/status • System health & uptime\n"
+            "/positions • Open positions with P&L\n"
+            "/pnl • Performance metrics\n"
+            "/scalp • Scalping strategy stats\n"
+            "/wyckoff • Main strategy stats\n\n"
+            "<b>Notifications</b>\n"
+            "You receive alerts when:\n"
+            "• Position opened\n"
+            "• Position closed (with P&L)\n\n"
+            "<b>Strategies</b>\n"
+            "⚡ Scalping: 1m ultra-fast trades\n"
+            "📊 Wyckoff: 5m-1h trend following\n\n"
+            "💡 Paper trading • Real-time data"
         )
         
-        await update.message.reply_text(message, parse_mode="Markdown")
-    
-    async def _handle_start_trading(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        """Handle /start_trading command"""
-        chat_id = update.effective_chat.id
-        
-        if not self._is_authorized(chat_id):
-            await update.message.reply_text("❌ Unauthorized")
-            return
-        
-        await update.message.reply_text(
-            "🚀 *Starting Paper Trading Bot*\n\n"
-            "Please wait...",
-            parse_mode="Markdown"
-        )
-        
-        try:
-            # Create flag file to signal trading bot to start
-            import os
-            flag_file = "/app/logs/start_trading.flag"
-            
-            with open(flag_file, 'w') as f:
-                f.write(f"START:{datetime.now().isoformat()}\n")
-            
-            # Start trading bot process
-            import subprocess
-            result = subprocess.Popen(
-                ["python", "scripts/run_paper_trading.py"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd="/app"
-            )
-            
-            await update.message.reply_text(
-                "✅ *Trading Bot Started*\n\n"
-                "Mode: Paper Trading\n"
-                f"Process ID: {result.pid}\n"
-                "Status: Running\n\n"
-                "📊 Dashboard: http://localhost:8501\n"
-                "📱 You will receive trade alerts here",
-                parse_mode="Markdown"
-            )
-            
-            logger.info(f"Trading bot started with PID: {result.pid}")
-            
-        except Exception as e:
-            logger.error(f"Error starting trading bot: {e}")
-            await update.message.reply_text(
-                f"❌ *Error*\n\n{str(e)}",
-                parse_mode="Markdown"
-            )
-    
-    async def _handle_stop_trading(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        """Handle /stop_trading command"""
-        chat_id = update.effective_chat.id
-        
-        if not self._is_authorized(chat_id):
-            await update.message.reply_text("❌ Unauthorized")
-            return
-        
-        await update.message.reply_text(
-            "🛑 *Stopping Trading Bot*\n\n"
-            "Please wait...",
-            parse_mode="Markdown"
-        )
-        
-        try:
-            # Create flag file to signal trading bot to stop
-            import os
-            flag_file = "/app/logs/stop_trading.flag"
-            
-            with open(flag_file, 'w') as f:
-                f.write(f"STOP:{datetime.now().isoformat()}\n")
-            
-            # Kill trading bot process
-            import subprocess
-            result = subprocess.run(
-                ["pkill", "-f", "run_paper_trading.py"],
-                capture_output=True,
-                text=True
-            )
-            
-            await update.message.reply_text(
-                "✅ *Trading Bot Stopped*\n\n"
-                "All positions closed (paper trading)\n"
-                "💰 No real money affected",
-                parse_mode="Markdown"
-            )
-            
-            logger.info("Trading bot stopped")
-            
-        except Exception as e:
-            logger.error(f"Error stopping trading bot: {e}")
-            await update.message.reply_text(
-                f"❌ *Error*\n\n{str(e)}",
-                parse_mode="Markdown"
-            )
+        await update.message.reply_text(message, parse_mode="HTML")
     
     async def send_alert(
         self,

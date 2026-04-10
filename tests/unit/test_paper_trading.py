@@ -11,6 +11,7 @@ from src.execution.paper_trader import PaperTrader, SimulatedAccount
 from src.execution.order_manager import OrderSide
 from src.execution.cost_filter import Orderbook, OrderbookLevel
 from src.execution.mode_switcher import ModeSwitcher, SafeModeSwitcher, TradingMode
+from src.risk.position_manager import PositionManager
 
 
 @pytest.fixture
@@ -228,6 +229,155 @@ class TestPaperTrader:
         assert trader.account.current_balance == Decimal("10000")
         assert trader.account.total_trades == 0
         assert len(trader.positions) == 0
+    
+    @pytest.mark.asyncio
+    async def test_has_open_position(self, sample_orderbook):
+        """Test checking for open position by symbol"""
+        trader = PaperTrader(initial_balance=Decimal("10000"))
+        
+        # No position initially
+        assert not trader.has_open_position("BTCUSDT")
+        
+        # Open position
+        position = await trader.execute_signal(
+            symbol="BTCUSDT",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.1"),
+            orderbook=sample_orderbook,
+            reason="Test"
+        )
+        
+        # Position exists
+        assert trader.has_open_position("BTCUSDT")
+        assert not trader.has_open_position("ETHUSDT")
+    
+    @pytest.mark.asyncio
+    async def test_get_position_by_symbol(self, sample_orderbook):
+        """Test getting position by symbol"""
+        trader = PaperTrader(initial_balance=Decimal("10000"))
+        
+        # No position initially
+        assert trader.get_position_by_symbol("BTCUSDT") is None
+        
+        # Open position
+        position = await trader.execute_signal(
+            symbol="BTCUSDT",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.1"),
+            orderbook=sample_orderbook,
+            reason="Test"
+        )
+        
+        # Get position
+        retrieved = trader.get_position_by_symbol("BTCUSDT")
+        assert retrieved is not None
+        assert retrieved.symbol == "BTCUSDT"
+        assert retrieved.position_id == position.position_id
+    
+    @pytest.mark.asyncio
+    async def test_get_all_positions(self, sample_orderbook):
+        """Test getting all positions"""
+        trader = PaperTrader(initial_balance=Decimal("10000"))
+        
+        # No positions initially
+        assert len(trader.get_all_positions()) == 0
+        
+        # Open first position
+        await trader.execute_signal(
+            symbol="BTCUSDT",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.1"),
+            orderbook=sample_orderbook,
+            reason="Test"
+        )
+        
+        # Open second position (different symbol)
+        eth_orderbook = Orderbook(
+            symbol="ETHUSDT",
+            bids=[OrderbookLevel(price=Decimal("3000"), quantity=Decimal("10.0"))],
+            asks=[OrderbookLevel(price=Decimal("3001"), quantity=Decimal("10.0"))],
+            timestamp=1234567890.0
+        )
+        await trader.execute_signal(
+            symbol="ETHUSDT",
+            side=OrderSide.BUY,
+            quantity=Decimal("1.0"),
+            orderbook=eth_orderbook,
+            reason="Test"
+        )
+        
+        # Get all positions
+        positions = trader.get_all_positions()
+        assert len(positions) == 2
+        symbols = {pos.symbol for pos in positions}
+        assert symbols == {"BTCUSDT", "ETHUSDT"}
+    
+    @pytest.mark.asyncio
+    async def test_close_position_by_symbol(self, sample_orderbook):
+        """Test closing position by symbol"""
+        trader = PaperTrader(initial_balance=Decimal("10000"))
+        
+        # Open position
+        await trader.execute_signal(
+            symbol="BTCUSDT",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.1"),
+            orderbook=sample_orderbook,
+            reason="Entry"
+        )
+        
+        # Close by symbol
+        pnl = await trader.close_position_by_symbol(
+            symbol="BTCUSDT",
+            orderbook=sample_orderbook,
+            reason="Exit"
+        )
+        
+        assert pnl is not None
+        assert not trader.has_open_position("BTCUSDT")
+        assert len(trader.positions) == 0
+    
+    @pytest.mark.asyncio
+    async def test_close_position_by_symbol_not_found(self, sample_orderbook):
+        """Test closing position by symbol when not found"""
+        trader = PaperTrader(initial_balance=Decimal("10000"))
+        
+        # Try to close non-existent position
+        pnl = await trader.close_position_by_symbol(
+            symbol="BTCUSDT",
+            orderbook=sample_orderbook,
+            reason="Exit"
+        )
+        
+        assert pnl is None
+    
+    @pytest.mark.asyncio
+    async def test_prevent_multiple_positions_same_symbol(self, sample_orderbook):
+        """Test prevention of multiple positions on same symbol"""
+        trader = PaperTrader(initial_balance=Decimal("10000"))
+        
+        # Open first position
+        position1 = await trader.execute_signal(
+            symbol="BTCUSDT",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.1"),
+            orderbook=sample_orderbook,
+            reason="First"
+        )
+        
+        assert position1 is not None
+        
+        # Try to open second position on same symbol
+        position2 = await trader.execute_signal(
+            symbol="BTCUSDT",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.1"),
+            orderbook=sample_orderbook,
+            reason="Second"
+        )
+        
+        assert position2 is None
+        assert len(trader.positions) == 1
 
 
 class TestModeSwitcher:
@@ -378,3 +528,179 @@ class TestSafeModeSwitcher:
         
         assert result is True
         assert switcher.is_live_mode
+
+
+class TestPaperTraderWithPositionManager:
+    """Test PaperTrader integration with PositionManager"""
+    
+    @pytest.mark.asyncio
+    async def test_position_manager_integration(self, sample_orderbook):
+        """Test PaperTrader with PositionManager for capital allocation"""
+        initial_balance = Decimal("10000")
+        position_manager = PositionManager(
+            initial_equity=initial_balance,
+            max_position_pct=Decimal("0.05"),  # 5% per position
+            max_exposure_pct=Decimal("0.80")   # 80% total exposure
+        )
+        trader = PaperTrader(
+            initial_balance=initial_balance,
+            position_manager=position_manager
+        )
+        
+        # Open position - should succeed
+        position = await trader.execute_signal(
+            symbol="BTCUSDT",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.009"),  # Small position (0.009 * 50010 = 450.09 < 500)
+            orderbook=sample_orderbook,
+            reason="Test"
+        )
+        
+        assert position is not None
+        assert position_manager.get_position_count() == 1
+        assert "BTCUSDT" in position_manager.get_positions_by_symbol()
+    
+    @pytest.mark.asyncio
+    async def test_position_manager_rejects_duplicate_symbol(self, sample_orderbook):
+        """Test PositionManager rejects duplicate symbol positions"""
+        initial_balance = Decimal("10000")
+        position_manager = PositionManager(
+            initial_equity=initial_balance,
+            max_position_pct=Decimal("0.05"),
+            max_exposure_pct=Decimal("0.80")
+        )
+        trader = PaperTrader(
+            initial_balance=initial_balance,
+            position_manager=position_manager
+        )
+        
+        # Open first position
+        position1 = await trader.execute_signal(
+            symbol="BTCUSDT",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.009"),
+            orderbook=sample_orderbook,
+            reason="First"
+        )
+        
+        assert position1 is not None
+        
+        # Try to open second position on same symbol - should be rejected
+        position2 = await trader.execute_signal(
+            symbol="BTCUSDT",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.009"),
+            orderbook=sample_orderbook,
+            reason="Second"
+        )
+        
+        assert position2 is None
+        assert position_manager.get_position_count() == 1
+    
+    @pytest.mark.asyncio
+    async def test_position_manager_enforces_position_limit(self, sample_orderbook):
+        """Test PositionManager enforces per-position size limit"""
+        initial_balance = Decimal("10000")
+        position_manager = PositionManager(
+            initial_equity=initial_balance,
+            max_position_pct=Decimal("0.05"),  # 5% = $500 max per position
+            max_exposure_pct=Decimal("0.80")
+        )
+        trader = PaperTrader(
+            initial_balance=initial_balance,
+            position_manager=position_manager
+        )
+        
+        # Try to open position larger than 5% of equity
+        # Position value = 0.02 * 50010 = 1000.2 > 500 (5% of 10000)
+        position = await trader.execute_signal(
+            symbol="BTCUSDT",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.02"),  # Too large
+            orderbook=sample_orderbook,
+            reason="Test"
+        )
+        
+        assert position is None
+        assert position_manager.get_position_count() == 0
+    
+    @pytest.mark.asyncio
+    async def test_position_manager_close_removes_position(self, sample_orderbook):
+        """Test closing position removes it from PositionManager"""
+        initial_balance = Decimal("10000")
+        position_manager = PositionManager(
+            initial_equity=initial_balance,
+            max_position_pct=Decimal("0.05"),
+            max_exposure_pct=Decimal("0.80")
+        )
+        trader = PaperTrader(
+            initial_balance=initial_balance,
+            position_manager=position_manager
+        )
+        
+        # Open position
+        position = await trader.execute_signal(
+            symbol="BTCUSDT",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.009"),
+            orderbook=sample_orderbook,
+            reason="Entry"
+        )
+        
+        assert position is not None
+        assert position_manager.get_position_count() == 1
+        
+        # Close position
+        pnl = await trader.close_position(
+            position_id=position.position_id,
+            orderbook=sample_orderbook,
+            reason="Exit"
+        )
+        
+        assert pnl is not None
+        assert position_manager.get_position_count() == 0
+        assert "BTCUSDT" not in position_manager.get_positions_by_symbol()
+    
+    @pytest.mark.asyncio
+    async def test_position_manager_multiple_symbols(self, sample_orderbook):
+        """Test PositionManager with multiple symbols"""
+        initial_balance = Decimal("10000")
+        position_manager = PositionManager(
+            initial_equity=initial_balance,
+            max_position_pct=Decimal("0.05"),
+            max_exposure_pct=Decimal("0.80")
+        )
+        trader = PaperTrader(
+            initial_balance=initial_balance,
+            position_manager=position_manager
+        )
+        
+        # Open first position
+        position1 = await trader.execute_signal(
+            symbol="BTCUSDT",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.009"),
+            orderbook=sample_orderbook,
+            reason="Test"
+        )
+        
+        # Open second position (different symbol)
+        eth_orderbook = Orderbook(
+            symbol="ETHUSDT",
+            bids=[OrderbookLevel(price=Decimal("3000"), quantity=Decimal("10.0"))],
+            asks=[OrderbookLevel(price=Decimal("3001"), quantity=Decimal("10.0"))],
+            timestamp=1234567890.0
+        )
+        position2 = await trader.execute_signal(
+            symbol="ETHUSDT",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.15"),  # Small position
+            orderbook=eth_orderbook,
+            reason="Test"
+        )
+        
+        assert position1 is not None
+        assert position2 is not None
+        assert position_manager.get_position_count() == 2
+        assert "BTCUSDT" in position_manager.get_positions_by_symbol()
+        assert "ETHUSDT" in position_manager.get_positions_by_symbol()

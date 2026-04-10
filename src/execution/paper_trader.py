@@ -14,6 +14,8 @@ from uuid import uuid4
 
 from .order_manager import Order, OrderState, OrderSide, OrderType, Position
 from .cost_filter import CostFilter, Orderbook
+from ..risk.position_manager import PositionManager
+from ..risk.drawdown_monitor import DrawdownMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +62,7 @@ class SimulatedTrade:
     status: str  # "OPEN" or "CLOSED"
     entry_reason: str
     exit_reason: Optional[str] = None
+    strategy_name: str = "main"
 
 
 class PaperTrader:
@@ -78,7 +81,9 @@ class PaperTrader:
         self,
         initial_balance: Decimal,
         commission_rate: Decimal = Decimal("0.0006"),  # Bybit taker fee
-        cost_filter: Optional[CostFilter] = None
+        cost_filter: Optional[CostFilter] = None,
+        position_manager: Optional[PositionManager] = None,
+        kill_switch = None
     ):
         """
         Initialize Paper Trader
@@ -87,6 +92,8 @@ class PaperTrader:
             initial_balance: Starting balance for simulation
             commission_rate: Commission rate (default: 0.06%)
             cost_filter: Cost filter for slippage calculation
+            position_manager: Position manager for capital allocation (optional)
+            kill_switch: Kill switch for emergency stop (optional)
         """
         self.account = SimulatedAccount(
             initial_balance=initial_balance,
@@ -94,9 +101,14 @@ class PaperTrader:
         )
         self.commission_rate = commission_rate
         self.cost_filter = cost_filter or CostFilter(commission_rate=commission_rate * 100)
+        self.position_manager = position_manager
+        self.kill_switch = kill_switch
+        
+        # Drawdown monitoring
+        self.drawdown_monitor = DrawdownMonitor(float(initial_balance))
         
         # Tracking
-        self.positions: Dict[str, Position] = {}
+        self.positions: Dict[str, Position] = {}  # position_id -> Position
         self.orders: Dict[str, Order] = {}
         self.trade_history: List[SimulatedTrade] = []
         
@@ -105,13 +117,78 @@ class PaperTrader:
             f"commission: {commission_rate*100:.2f}%"
         )
     
+    def has_open_position(self, symbol: str, strategy_name: str = "main") -> bool:
+        """
+        Check if there is an open position for the given symbol and strategy
+        
+        Args:
+            symbol: Trading symbol to check
+            strategy_name: Strategy name
+        
+        Returns:
+            True if position exists for symbol and strategy, False otherwise
+        """
+        return any(pos.symbol == symbol and pos.strategy_name == strategy_name for pos in self.positions.values())
+    
+    def get_position_by_symbol(self, symbol: str, strategy_name: str = "main") -> Optional[Position]:
+        """
+        Get the open position for a specific symbol and strategy
+        
+        Args:
+            symbol: Trading symbol
+            strategy_name: Strategy name
+        
+        Returns:
+            Position object if found, None otherwise
+        """
+        for position in self.positions.values():
+            if position.symbol == symbol and position.strategy_name == strategy_name:
+                return position
+        return None
+    
+    def get_all_positions(self) -> List[Position]:
+        """
+        Get all open positions
+        
+        Returns:
+            List of all Position objects
+        """
+        return list(self.positions.values())
+    
+    async def close_position_by_symbol(
+        self,
+        symbol: str,
+        orderbook: Orderbook,
+        reason: str = "Close",
+        strategy_name: str = "main"
+    ) -> Optional[Decimal]:
+        """
+        Close position by symbol
+        
+        Args:
+            symbol: Trading symbol
+            orderbook: Current orderbook for exit price
+            reason: Exit reason for logging
+        
+        Returns:
+            Realized P&L if successful, None if position not found
+        """
+        position = self.get_position_by_symbol(symbol, strategy_name)
+        if position is None:
+            logger.error(f"No open position found for symbol {symbol} strategy {strategy_name}")
+            return None
+        
+        return await self.close_position(position.position_id, orderbook, reason)
+    
     async def execute_signal(
         self,
         symbol: str,
         side: OrderSide,
         quantity: Decimal,
         orderbook: Orderbook,
-        reason: str = "Signal"
+        reason: str = "Signal",
+        strategy_name: str = "main",
+        leverage: Decimal = Decimal("1.0")
     ) -> Optional[Position]:
         """
         Execute trading signal in paper mode
@@ -126,6 +203,13 @@ class PaperTrader:
         Returns:
             Simulated position if successful, None if rejected
         """
+        # Check if position already exists for this symbol and strategy
+        if self.has_open_position(symbol, strategy_name):
+            logger.warning(
+                f"Paper trade rejected: Position already exists for {symbol} ({strategy_name})"
+            )
+            return None
+        
         # Analyze costs
         analysis = self.cost_filter.analyze_trade(orderbook, side.value, quantity)
         
@@ -145,14 +229,43 @@ class PaperTrader:
         position_value = entry_price * quantity
         commission = position_value * self.commission_rate
         
-        # Check if sufficient balance
-        required_balance = position_value + commission
-        if required_balance > self.account.current_balance:
+        # Check capital allocation with PositionManager if available
+        if self.position_manager is not None:
+            can_open, allocation_reason = self.position_manager.can_open_position(
+                symbol, position_value
+            )
+            if not can_open:
+                logger.warning(
+                    f"Paper trade rejected by PositionManager: {allocation_reason}"
+                )
+                return None
+        
+        # Check if sufficient balance (with leverage)
+        # CROSS MARGIN: Use equity (balance + unrealized PnL) instead of just balance
+        # This allows unrealized profit to be used as margin for new positions
+        
+        # Calculate current equity (balance + unrealized PnL from all positions)
+        current_prices_for_equity = {pos.symbol: Decimal(str(pos.entry_price)) for pos in self.positions.values()}
+        self.account.update_equity(list(self.positions.values()), current_prices_for_equity)
+        available_margin = self.account.equity  # Use equity instead of current_balance
+        
+        # Margin required = position_value / leverage
+        margin_required = position_value / leverage if leverage > Decimal("1.0") else position_value
+        required_balance = margin_required + commission
+        
+        if required_balance > available_margin:
             logger.warning(
-                f"Insufficient balance: required={required_balance}, "
-                f"available={self.account.current_balance}"
+                f"Insufficient margin (CROSS): required={required_balance:.2f} (margin={margin_required:.2f} + commission={commission:.2f}), "
+                f"available={available_margin:.2f} (balance={self.account.current_balance:.2f} + unrealized={self.account.unrealized_pnl:.2f}), "
+                f"leverage={leverage}x"
             )
             return None
+        
+        logger.info(
+            f"Opening position with CROSS margin: "
+            f"required={required_balance:.2f}, available={available_margin:.2f}, "
+            f"balance={self.account.current_balance:.2f}, unrealized_pnl={self.account.unrealized_pnl:.2f}"
+        )
         
         # Create simulated order
         order_id = str(uuid4())
@@ -165,7 +278,8 @@ class PaperTrader:
             price=entry_price,
             state=OrderState.FILLED,
             filled_qty=quantity,
-            avg_fill_price=entry_price
+            avg_fill_price=entry_price,
+            strategy_name=strategy_name
         )
         
         self.orders[order_id] = order
@@ -176,13 +290,31 @@ class PaperTrader:
             symbol=symbol,
             side=side,
             entry_price=entry_price,
-            quantity=quantity
+            quantity=quantity,
+            strategy_name=strategy_name
         )
         
         self.positions[position.position_id] = position
         
-        # Update account balance
+        # Add position to PositionManager if available
+        if self.position_manager is not None:
+            success = self.position_manager.add_position(
+                symbol, quantity, entry_price
+            )
+            if not success:
+                # Rollback position creation
+                del self.positions[position.position_id]
+                del self.orders[order_id]
+                logger.error(
+                    f"Failed to add position to PositionManager for {symbol}"
+                )
+                return None
+        
+        # Update account balance (deduct margin + commission)
         self.account.current_balance -= required_balance
+        
+        # Update drawdown monitor
+        self.drawdown_monitor.update_balance(float(self.account.current_balance))
         
         # Record trade
         trade = SimulatedTrade(
@@ -197,7 +329,8 @@ class PaperTrader:
             slippage=analysis.expected_slippage,
             pnl=None,
             status="OPEN",
-            entry_reason=reason
+            entry_reason=reason,
+            strategy_name=strategy_name
         )
         
         self.trade_history.append(trade)
@@ -207,6 +340,18 @@ class PaperTrader:
             f"Paper trade executed: {side.value} {quantity} {symbol} @ {entry_price} "
             f"(slippage: {analysis.expected_slippage:.4f}%, commission: {commission:.2f})"
         )
+        
+        # Notify Telegram
+        import asyncio
+        from src.monitoring.notifier import send_telegram_alert
+        side_emoji = "🟢" if side == OrderSide.BUY else "🔴"
+        msg = (
+            f"{side_emoji} <b>OPENED {side.value.upper()}</b> • {strategy_name.upper()}\n"
+            f"<b>{symbol}</b> × {quantity:.6f}\n"
+            f"Entry: <code>${entry_price:.2f}</code>\n"
+            f"Size: <code>${position_value:.2f}</code>"
+        )
+        asyncio.create_task(send_telegram_alert(msg))
         
         return position
     
@@ -257,10 +402,23 @@ class PaperTrader:
         self.account.current_balance += position_value + net_pnl
         self.account.realized_pnl += net_pnl
         
+        # Update drawdown monitor
+        self.drawdown_monitor.update_balance(float(self.account.current_balance))
+        
+        # Track win/loss
         if net_pnl > Decimal("0"):
             self.account.winning_trades += 1
         else:
             self.account.losing_trades += 1
+        
+        # Update kill switch if available
+        if self.kill_switch:
+            self.kill_switch.record_trade(profit=float(net_pnl))
+            drawdown_metrics = self.drawdown_monitor.get_metrics()
+            self.kill_switch.update_state(
+                balance=float(self.account.current_balance),
+                daily_drawdown=drawdown_metrics.daily_drawdown
+            )
         
         # Update trade record
         for trade in self.trade_history:
@@ -275,15 +433,51 @@ class PaperTrader:
         # Remove position
         del self.positions[position_id]
         
+        # Remove position from PositionManager if available
+        if self.position_manager is not None:
+            self.position_manager.remove_position(position.symbol)
+        
         logger.info(
             f"Paper position closed: {position.side.value} {position.quantity} "
             f"{position.symbol} @ {exit_price} (P&L: {net_pnl:.2f})"
         )
         
+        # Notify Telegram
+        import asyncio
+        from src.monitoring.notifier import send_telegram_alert
+        pnl_emoji = "🟢" if net_pnl > 0 else "🔴"
+        pnl_pct = (net_pnl / position_value) * 100 if position_value > 0 else 0
+        msg = (
+            f"{pnl_emoji} <b>CLOSED {position.side.value.upper()}</b> • {position.strategy_name.upper()}\n"
+            f"<b>{position.symbol}</b> × {position.quantity:.6f}\n"
+            f"Exit: <code>${exit_price:.2f}</code> • {reason}\n"
+            f"P&L: <code>{net_pnl:+.2f} USDT</code> ({pnl_pct:+.2f}%)"
+        )
+        asyncio.create_task(send_telegram_alert(msg))
+        
         return net_pnl
     
-    def get_account_summary(self) -> Dict:
-        """Get account summary"""
+    def get_account_summary(self, current_prices: Optional[Dict[str, Decimal]] = None) -> Dict:
+        """Get account summary with updated equity
+        
+        Args:
+            current_prices: Dict of symbol -> current price for unrealized PnL calculation
+        """
+        # Always update equity if we have positions
+        if self.positions:
+            if current_prices:
+                # Update with provided prices
+                self.account.update_equity(list(self.positions.values()), current_prices)
+            else:
+                # If no prices provided, try to use last known prices from positions
+                # This ensures equity is at least calculated with entry prices
+                last_prices = {pos.symbol: pos.entry_price for pos in self.positions.values()}
+                self.account.update_equity(list(self.positions.values()), last_prices)
+        else:
+            # No positions, equity = balance
+            self.account.equity = self.account.current_balance
+            self.account.unrealized_pnl = Decimal("0")
+        
         win_rate = (
             self.account.winning_trades / self.account.total_trades * 100
             if self.account.total_trades > 0 else 0
@@ -293,6 +487,7 @@ class PaperTrader:
             "initial_balance": float(self.account.initial_balance),
             "current_balance": float(self.account.current_balance),
             "equity": float(self.account.equity),
+            "available_margin": float(self.account.equity),  # CROSS MARGIN: equity is available margin
             "total_pnl": float(self.account.total_pnl),
             "realized_pnl": float(self.account.realized_pnl),
             "unrealized_pnl": float(self.account.unrealized_pnl),
@@ -301,6 +496,27 @@ class PaperTrader:
             "losing_trades": self.account.losing_trades,
             "win_rate": win_rate,
             "open_positions": len(self.positions)
+        }
+    
+    def get_strategy_summary(self, strategy_name: str) -> Dict:
+        """Get summary string specifically for a strategy"""
+        trades = [t for t in self.trade_history if t.strategy_name == strategy_name]
+        pos = [p for p in self.positions.values() if p.strategy_name == strategy_name]
+        
+        total_trades = len(trades)
+        winning = len([t for t in trades if getattr(t, 'pnl', 0) is not None and float(getattr(t, 'pnl', 0) or 0) > 0])
+        losing = len([t for t in trades if getattr(t, 'pnl', 0) is not None and float(getattr(t, 'pnl', 0) or 0) < 0])
+        total_pnl = sum([float(getattr(t, 'pnl', 0) or 0) for t in trades if getattr(t, 'pnl', 0) is not None])
+        
+        # Calculate unrealized pnl roughly, wait PaperTrader calculate_pnl needs exit_price. 
+        # But we just return what we can since telegram bot usually requests it globally.
+        return {
+            "total_trades": total_trades,
+            "winning_trades": winning,
+            "losing_trades": losing,
+            "win_rate": (winning / total_trades * 100) if total_trades > 0 else 0,
+            "realized_pnl": total_pnl,
+            "open_positions": len(pos)
         }
     
     def get_trade_history(self) -> List[Dict]:
@@ -319,7 +535,8 @@ class PaperTrader:
                 "pnl": float(trade.pnl) if trade.pnl else None,
                 "status": trade.status,
                 "entry_reason": trade.entry_reason,
-                "exit_reason": trade.exit_reason
+                "exit_reason": trade.exit_reason,
+                "strategy_name": trade.strategy_name
             }
             for trade in self.trade_history
         ]
@@ -333,7 +550,7 @@ class PaperTrader:
                 'trade_id', 'timestamp', 'symbol', 'side',
                 'entry_price', 'exit_price', 'quantity',
                 'commission', 'slippage', 'pnl',
-                'status', 'entry_reason', 'exit_reason'
+                'status', 'entry_reason', 'exit_reason', 'strategy_name'
             ])
             
             writer.writeheader()

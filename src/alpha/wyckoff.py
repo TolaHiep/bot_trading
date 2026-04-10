@@ -159,10 +159,17 @@ class WyckoffDetector:
             )
             self.phase_transitions.append(transition)
             
-            logger.info(
-                f"Phase transition: {self.current_phase.value} -> {new_phase.value} "
-                f"(confidence: {confidence:.2f})"
-            )
+            # Only log important phase transitions (MARKUP/MARKDOWN)
+            if new_phase in [WyckoffPhase.MARKUP, WyckoffPhase.MARKDOWN]:
+                logger.info(
+                    f"Phase transition: {self.current_phase.value} -> {new_phase.value} "
+                    f"(confidence: {confidence:.2f})"
+                )
+            else:
+                logger.debug(
+                    f"Phase transition: {self.current_phase.value} -> {new_phase.value} "
+                    f"(confidence: {confidence:.2f})"
+                )
             
             self.current_phase = new_phase
             phase_changed = True
@@ -200,7 +207,8 @@ class WyckoffDetector:
         if len(self.volumes) < 20:
             return 'STABLE'
         
-        recent_volumes = list(self.volumes)[-20:]
+        # Use float32 for memory optimization
+        recent_volumes = np.array(list(self.volumes)[-20:], dtype=np.float32)
         first_half = np.mean(recent_volumes[:10])
         second_half = np.mean(recent_volumes[10:])
         

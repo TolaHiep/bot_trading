@@ -48,21 +48,22 @@ class OrderFlowAnalyzer:
         Args:
             symbol: Trading symbol
             timeframe: Timeframe
-            window_size: Number of trades to maintain in rolling window
+            window_size: Number of trades to maintain in rolling window (max 1000 for memory optimization)
             imbalance_threshold: Threshold for imbalance detection (0.7 = 70%)
         """
         self.symbol = symbol
         self.timeframe = timeframe
-        self.window_size = window_size
+        # Limit window size to 1000 trades for memory optimization
+        self.window_size = min(window_size, 1000)
         self.imbalance_threshold = imbalance_threshold
         
-        # Rolling window of trades
-        self.trades: Deque[Trade] = deque(maxlen=window_size)
+        # Rolling window of trades (circular buffer with strict limit)
+        self.trades: Deque[Trade] = deque(maxlen=self.window_size)
         
         # Cumulative delta
         self.cumulative_delta = 0.0
         
-        # Delta history for divergence detection
+        # Delta history for divergence detection (limited to 100 for memory)
         self.delta_history: Deque[float] = deque(maxlen=100)
         self.price_history: Deque[float] = deque(maxlen=100)
         
@@ -261,12 +262,12 @@ class OrderFlowAnalyzer:
         if price_max == price_min:
             return []
         
-        # Create price bins
-        bins = np.linspace(price_min, price_max, num_bins + 1)
+        # Create price bins with float32 for memory optimization
+        bins = np.linspace(price_min, price_max, num_bins + 1, dtype=np.float32)
         
-        # Aggregate volume by price bin
-        buy_volumes = np.zeros(num_bins)
-        sell_volumes = np.zeros(num_bins)
+        # Aggregate volume by price bin with float32
+        buy_volumes = np.zeros(num_bins, dtype=np.float32)
+        sell_volumes = np.zeros(num_bins, dtype=np.float32)
         
         for trade in self.trades:
             bin_idx = np.searchsorted(bins[:-1], trade.price, side='right') - 1
@@ -300,10 +301,10 @@ class OrderFlowAnalyzer:
                     imbalance_ratio = -sell_ratio
                 
                 zone = ImbalanceZone(
-                    price_level=price_level,
-                    buy_volume=buy_volumes[i],
-                    sell_volume=sell_volumes[i],
-                    imbalance_ratio=imbalance_ratio,
+                    price_level=float(price_level),
+                    buy_volume=float(buy_volumes[i]),
+                    sell_volume=float(sell_volumes[i]),
+                    imbalance_ratio=float(imbalance_ratio),
                     timestamp=self.trades[-1].timestamp if self.trades else 0
                 )
                 

@@ -30,7 +30,8 @@ class TechnicalIndicators:
         macd_signal: int = 9,
         bb_period: int = 20,
         bb_std: float = 2.0,
-        volume_profile_hours: int = 24
+        volume_profile_hours: int = 24,
+        max_history: int = 200
     ):
         """Initialize technical indicators
         
@@ -46,6 +47,7 @@ class TechnicalIndicators:
             bb_period: Bollinger Bands period
             bb_std: Bollinger Bands standard deviation multiplier
             volume_profile_hours: Volume profile window in hours
+            max_history: Maximum bars to keep in history (circular buffer limit)
         """
         self.symbol = symbol
         self.timeframe = timeframe
@@ -60,13 +62,18 @@ class TechnicalIndicators:
         self.bb_period = bb_period
         self.bb_std = bb_std
         self.volume_profile_hours = volume_profile_hours
+        self.max_history = max_history
         
-        # Data storage (rolling windows)
-        max_period = max(sma_periods + ema_periods + [bb_period, macd_slow])
+        # Data storage (rolling windows with circular buffer limit)
+        # Limit to max_history bars to prevent memory bloat
+        max_period = min(max(sma_periods + ema_periods + [bb_period, macd_slow]), max_history)
         self.closes = deque(maxlen=max_period)
         self.volumes = deque(maxlen=max_period)
-        self.prices_for_volume_profile = deque(maxlen=self._get_volume_profile_window())
-        self.volumes_for_profile = deque(maxlen=self._get_volume_profile_window())
+        
+        # Volume profile limited to max_history
+        vp_window = min(self._get_volume_profile_window(), max_history)
+        self.prices_for_volume_profile = deque(maxlen=vp_window)
+        self.volumes_for_profile = deque(maxlen=vp_window)
         
         # Incremental calculators
         self.ema_calculators: Dict[int, IncrementalEMA] = {
@@ -156,6 +163,11 @@ class TechnicalIndicators:
         vp_values = self._calculate_volume_profile()
         if vp_values:
             indicators.update(vp_values)
+            
+        # VWAP
+        vwap = self._calculate_vwap()
+        if vwap is not None:
+            indicators['vwap'] = vwap
         
         # Store current values
         self.current_values = indicators
@@ -188,8 +200,8 @@ class TechnicalIndicators:
         if len(self.closes) < period:
             return None
         
-        # Use numpy for vectorized calculation
-        closes_array = np.array(list(self.closes)[-period:])
+        # Use numpy with float32 for 50% memory reduction
+        closes_array = np.array(list(self.closes)[-period:], dtype=np.float32)
         return float(np.mean(closes_array))
     
     def _calculate_macd_incremental(self, close: float) -> Dict:
@@ -239,8 +251,8 @@ class TechnicalIndicators:
         if len(self.closes) < self.bb_period:
             return {}
         
-        # Use numpy for vectorized calculation
-        closes_array = np.array(list(self.closes)[-self.bb_period:])
+        # Use numpy with float32 for 50% memory reduction
+        closes_array = np.array(list(self.closes)[-self.bb_period:], dtype=np.float32)
         
         # Middle band = SMA
         middle = float(np.mean(closes_array))
@@ -268,9 +280,9 @@ class TechnicalIndicators:
         if len(self.prices_for_volume_profile) < 10:
             return {}
         
-        # Convert to numpy arrays
-        prices = np.array(list(self.prices_for_volume_profile))
-        volumes = np.array(list(self.volumes_for_profile))
+        # Convert to numpy arrays with float32 for 50% memory reduction
+        prices = np.array(list(self.prices_for_volume_profile), dtype=np.float32)
+        volumes = np.array(list(self.volumes_for_profile), dtype=np.float32)
         
         # Create price bins (20 bins)
         num_bins = 20
@@ -280,10 +292,10 @@ class TechnicalIndicators:
         if price_max == price_min:
             return {}
         
-        bins = np.linspace(price_min, price_max, num_bins + 1)
+        bins = np.linspace(price_min, price_max, num_bins + 1, dtype=np.float32)
         
         # Aggregate volume by price bins
-        volume_by_bin = np.zeros(num_bins)
+        volume_by_bin = np.zeros(num_bins, dtype=np.float32)
         
         for i in range(len(prices)):
             bin_idx = np.searchsorted(bins[:-1], prices[i], side='right') - 1
@@ -319,13 +331,32 @@ class TechnicalIndicators:
         value_area_high = bins[max(value_area_indices) + 1]
         
         return {
-            'vp_poc': poc_price,  # Point of Control
-            'vp_hvn': hvn_price,  # High Volume Node
-            'vp_lvn': lvn_price,  # Low Volume Node
-            'vp_value_area_high': value_area_high,
-            'vp_value_area_low': value_area_low,
+            'vp_poc': float(poc_price),  # Point of Control
+            'vp_hvn': float(hvn_price),  # High Volume Node
+            'vp_lvn': float(lvn_price),  # Low Volume Node
+            'vp_value_area_high': float(value_area_high),
+            'vp_value_area_low': float(value_area_low),
             'vp_total_volume': float(total_volume)
         }
+    
+    def _calculate_vwap(self) -> Optional[float]:
+        """Calculate Rolling VWAP
+        
+        Returns:
+            VWAP value or None
+        """
+        if len(self.prices_for_volume_profile) == 0:
+            return None
+            
+        prices = np.array(list(self.prices_for_volume_profile), dtype=np.float32)
+        volumes = np.array(list(self.volumes_for_profile), dtype=np.float32)
+        
+        cumulative_volume = np.sum(volumes)
+        if cumulative_volume == 0:
+            return float(prices[-1])  # Fallback to last price if volume is 0
+            
+        vwap = np.sum(prices * volumes) / cumulative_volume
+        return float(vwap)
     
     def get_current_values(self) -> Dict:
         """Get current indicator values
@@ -363,13 +394,15 @@ class IndicatorEngine:
     def get_or_create_indicators(
         self,
         symbol: str,
-        timeframe: str
+        timeframe: str,
+        **kwargs
     ) -> TechnicalIndicators:
         """Get or create indicators for symbol/timeframe
         
         Args:
             symbol: Trading symbol
             timeframe: Timeframe
+            **kwargs: Configuration values passed to TechnicalIndicators
             
         Returns:
             TechnicalIndicators instance
@@ -377,7 +410,7 @@ class IndicatorEngine:
         key = (symbol, timeframe)
         
         if key not in self.indicators:
-            self.indicators[key] = TechnicalIndicators(symbol, timeframe)
+            self.indicators[key] = TechnicalIndicators(symbol, timeframe, **kwargs)
             logger.info(f"Created indicators for {symbol} {timeframe}")
         
         return self.indicators[key]
@@ -387,7 +420,8 @@ class IndicatorEngine:
         symbol: str,
         timeframe: str,
         close: float,
-        volume: float
+        volume: float,
+        **kwargs
     ) -> Dict:
         """Update indicators for symbol/timeframe
         
@@ -400,7 +434,7 @@ class IndicatorEngine:
         Returns:
             Dictionary with all current indicator values
         """
-        indicators = self.get_or_create_indicators(symbol, timeframe)
+        indicators = self.get_or_create_indicators(symbol, timeframe, **kwargs)
         return indicators.update(close, volume)
     
     def get_values(self, symbol: str, timeframe: str) -> Dict:
