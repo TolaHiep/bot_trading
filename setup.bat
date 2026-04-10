@@ -42,15 +42,12 @@ echo # Trading Bot Configuration
 echo # ============================================
 echo.
 echo # Bybit API Configuration
-echo # Get your API keys from: https://www.bybit.com/app/user/api-management
 echo BYBIT_API_KEY=your_api_key_here
 echo BYBIT_API_SECRET=your_api_secret_here
 echo.
 echo # Telegram Bot Configuration
-echo # 1. Create bot: Talk to @BotFather on Telegram
-echo # 2. Get your chat ID: Talk to @userinfobot on Telegram
 echo TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
-echo TELEGRAM_CHAT_IDS=your_chat_id_here,another_chat_id_here
+echo TELEGRAM_CHAT_IDS=your_chat_id_here
 echo.
 echo # Database Configuration
 echo POSTGRES_USER=trading_bot
@@ -77,7 +74,7 @@ echo You need to fill in:
 echo   1. BYBIT_API_KEY - Your Bybit API key
 echo   2. BYBIT_API_SECRET - Your Bybit API secret
 echo   3. TELEGRAM_BOT_TOKEN - Your Telegram bot token
-echo   4. TELEGRAM_CHAT_IDS - Your Telegram chat ID(s)
+echo   4. TELEGRAM_CHAT_IDS - Your Telegram chat ID
 echo.
 echo After editing .env, run: start.bat
 echo.
@@ -97,7 +94,6 @@ REM Create start.bat script
 echo Creating start.bat script...
 (
 echo @echo off
-echo REM Start Trading Bot
 echo echo Starting Trading Bot...
 echo docker-compose down
 echo docker-compose build
@@ -111,12 +107,6 @@ echo echo Services:
 echo echo   - Trading Bot: Running
 echo echo   - Telegram Bot: Running
 echo echo   - Dashboard: http://localhost:8501
-echo echo   - Database: localhost:5432
-echo echo.
-echo echo Commands:
-echo echo   - View logs: docker logs -f trading_bot_app
-echo echo   - Stop bot: docker-compose down
-echo echo   - Restart: docker-compose restart
 echo echo.
 echo pause
 ) > start.bat
@@ -127,7 +117,6 @@ REM Create stop.bat script
 echo Creating stop.bat script...
 (
 echo @echo off
-echo REM Stop Trading Bot
 echo echo Stopping Trading Bot...
 echo docker-compose down
 echo echo.
@@ -141,7 +130,6 @@ REM Create logs.bat script
 echo Creating logs.bat script...
 (
 echo @echo off
-echo REM View Trading Bot Logs
 echo echo Select which logs to view:
 echo echo   1. Trading Bot
 echo echo   2. Telegram Bot
@@ -162,7 +150,6 @@ REM Create restart.bat script
 echo Creating restart.bat script...
 (
 echo @echo off
-echo REM Restart Trading Bot
 echo echo Restarting Trading Bot...
 echo docker-compose restart
 echo echo.
@@ -176,7 +163,6 @@ REM Create status.bat script
 echo Creating status.bat script...
 (
 echo @echo off
-echo REM Check Trading Bot Status
 echo echo ============================================
 echo echo Trading Bot Status
 echo echo ============================================
